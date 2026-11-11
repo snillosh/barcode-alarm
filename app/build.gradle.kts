@@ -2,7 +2,7 @@ plugins { id("com.android.application") }
 android {
  namespace = "uk.co.barcodealarm"
  compileSdk = 36
- defaultConfig { applicationId = "uk.co.barcodealarm"; minSdk = 28; targetSdk = 36; versionCode = 4; versionName = "0.3.0" }
+ defaultConfig { applicationId = "uk.co.barcodealarm"; minSdk = 28; targetSdk = 36; versionCode = 5; versionName = "0.4.0" }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }
 dependencies {

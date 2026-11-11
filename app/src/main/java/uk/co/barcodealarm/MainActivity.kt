@@ -15,23 +15,34 @@ import android.content.res.ColorStateList
 import android.graphics.Typeface
 
 class MainActivity: Screen() {
+ private var showingBarcodes=false
+ private var pendingCode: String?=null
+ private var pendingFormat: String?=null
+ private var pendingName=""
+ private var nameInput: EditText?=null
  private var showingSettings=false
  private var editing: Alarm?=null
  private var picker: TimePicker?=null
  override fun onCreate(state: Bundle?) {
   super.onCreate(state)
   state?.getInt("editing",-1)?.takeIf { it>=0 }?.let { id -> editing=Store(this).get(id) ?: Alarm(id,7,0,"","") }
-  if(state!=null && editing!=null) editing=editing!!.copy(hour=state.getInt("hour"),minute=state.getInt("minute"),code=state.getString("code", ""),format=state.getString("format", ""),sound=state.getString("sound", ""))
+  if(state!=null && editing!=null) editing=editing!!.copy(hour=state.getInt("hour"),minute=state.getInt("minute"),code=state.getString("code", ""),format=state.getString("format", ""),sound=state.getString("sound", ""),barcodeId=state.getInt("barcodeId"))
   showingSettings=state?.getBoolean("settings") ?: false
-  if(editing!=null) editor() else if(showingSettings) settings() else home()
+  showingBarcodes=state?.getBoolean("barcodes") ?: false
+  pendingCode=state?.getString("pendingCode");pendingFormat=state?.getString("pendingFormat")
+  pendingName=state?.getString("pendingName").orEmpty()
+  if(showingBarcodes) barcodes() else if(editing!=null) editor() else if(showingSettings) settings() else home()
+  if(pendingCode!=null) nameScannedBarcode()
  }
  override fun onSaveInstanceState(out: Bundle) {
-  out.putBoolean("settings",showingSettings)
-  editing?.let { a -> out.putInt("editing",a.id);out.putInt("hour",picker?.hour ?: a.hour);out.putInt("minute",picker?.minute ?: a.minute);out.putString("code",a.code);out.putString("format",a.format);out.putString("sound",a.sound) };super.onSaveInstanceState(out)
+  out.putBoolean("settings",showingSettings);out.putBoolean("barcodes",showingBarcodes)
+  out.putString("pendingCode",pendingCode);out.putString("pendingFormat",pendingFormat)
+  out.putString("pendingName",nameInput?.text?.toString() ?: pendingName)
+  editing?.let { a -> out.putInt("editing",a.id);out.putInt("hour",picker?.hour ?: a.hour);out.putInt("minute",picker?.minute ?: a.minute);out.putString("code",a.code);out.putString("format",a.format);out.putString("sound",a.sound);out.putInt("barcodeId",a.barcodeId) };super.onSaveInstanceState(out)
  }
- override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else if(editing==null) { if(showingSettings) settings() else home() } }
+ override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else if(!showingBarcodes && editing==null) { if(showingSettings) settings() else home() } }
  private fun home() {
-  showingSettings=false
+  showingSettings=false;showingBarcodes=false
   page("Your alarms", "A deliberate start to your day.");picker=null
   if(Build.VERSION.SDK_INT>=31 && !getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) {
    Store(this).all().filter { it.enabled }.forEach { Store(this).put(it.copy(enabled=false,due=0)) }
@@ -58,6 +69,7 @@ class MainActivity: Screen() {
     setOnCheckedChangeListener { _,checked -> attempt { if(checked) Scheduling(this@MainActivity).enable(a) else Scheduling(this@MainActivity).disable(a) };home() }
    })
    body.addView(row)
+   caption(Store(this).barcodes().find { it.id==a.barcodeId }?.name ?: "No barcode selected")
    caption(if(a.enabled) "Enabled · scan to dismiss" else "Disabled · enable for the next occurrence")
    actionRow {
    button("Edit alarm") { editing=a;editor() }
@@ -65,6 +77,7 @@ class MainActivity: Screen() {
    }
   } }
   button("＋  Add alarm",primary=true) { editing=Alarm((Store(this).all().maxOfOrNull { it.id } ?: 0)+1,7,0,"","");editor() }
+  button("Barcodes") { barcodes() }
   button("Test alarm") { test() };button("Settings & diagnostics") { settings() }
  }
  private fun captureTime() { editing=editing?.copy(hour=picker?.hour ?: 7,minute=picker?.minute ?: 0) }
@@ -74,13 +87,26 @@ class MainActivity: Screen() {
   picker=TimePicker(this).apply { setIs24HourView(true);hour=a.hour;minute=a.minute };body.addView(picker)
   space(12)
   caption("DISMISSAL BARCODE")
-  label(if(a.code.isEmpty()) "No barcode registered" else "✓  Barcode registered",20f)
-  if(a.code.isNotEmpty()) caption(a.format.replace('_',' '))
-  button(if(a.code.isEmpty()) "Scan a barcode" else "Replace barcode") { captureTime();attempt { scan() } }
+  val library=Store(this).barcodes().sortedBy { it.name.lowercase(java.util.Locale.ROOT) }
+  if(library.isEmpty()) caption("Your library is empty. Add a barcode below before saving this alarm.")
+  val choices=listOf("Select a barcode…")+library.map { it.name }
+  body.addView(Spinner(this).apply {
+   contentDescription="Dismissal barcode"
+   minimumHeight=dp(56)
+   adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_item,choices).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+   setSelection(library.indexOfFirst { it.id==a.barcodeId }.let { if(it<0) 0 else it+1 })
+   onItemSelectedListener=object: android.widget.AdapterView.OnItemSelectedListener {
+    override fun onNothingSelected(parent: android.widget.AdapterView<*>?) { }
+    override fun onItemSelected(parent: android.widget.AdapterView<*>?,view: View?,position: Int,id: Long) {
+     editing=editing?.copy(barcodeId=if(position==0) 0 else library[position-1].id)
+    }
+   }
+  })
+  button("Manage barcodes") { captureTime();barcodes() }
   button("Choose alarm sound") { captureTime();startActivityForResult(Intent(RingtoneManager.ACTION_RINGTONE_PICKER).putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE,RingtoneManager.TYPE_ALARM).putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT,false).putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,a.sound.takeIf { it.isNotEmpty() }?.let(Uri::parse)),42) }
   space(12)
   button("Save alarm",primary=true) { attempt {
-   captureTime();val updated=editing!!;check(updated.code.isNotEmpty()) { "Register a barcode first" }
+   captureTime();val draft=editing!!;val updated=BarcodeLibrary.select(draft,draft.barcodeId,Store(this).barcodes())
    check(Store(this).get(updated.id)?.ringing != true) { "Cannot edit a ringing alarm" }
    if(updated.enabled) Scheduling(this).enable(updated) else Store(this).put(updated)
    editing=null;home()
@@ -90,8 +116,66 @@ class MainActivity: Screen() {
  @Deprecated("Android result API") override fun onActivityResult(request: Int,result: Int,data: Intent?) {
   super.onActivityResult(request,result,data)
   val scan=IntentIntegrator.parseActivityResult(request,result,data)
-  if(scan!=null) { if(scan.contents!=null) editing=editing?.copy(code=scan.contents,format=scan.formatName);editor() }
+  if(scan!=null) {
+   if(scan.contents!=null) {
+    pendingCode=scan.contents;pendingFormat=scan.formatName;pendingName=""
+    barcodes();nameScannedBarcode()
+   } else barcodes()
+  }
   else if(request==42 && result==RESULT_OK) { val uri=data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);editing=editing?.copy(sound=uri?.toString().orEmpty());editor() }
+ }
+ private fun barcodes() {
+  showingBarcodes=true;showingSettings=false;picker=null
+  page("Barcodes", "Familiar names. One less thing to think about.")
+  val store=Store(this)
+  val library=store.barcodes().sortedBy { it.name.lowercase(java.util.Locale.ROOT) }
+  if(library.isEmpty()) card { label("Your barcode library",22f);caption("Scan an everyday object or QR code and give it a name, such as Home bathroom shampoo.") }
+  library.forEach { entry -> card {
+   label(entry.name,22f);caption(entry.format.replace('_',' '))
+   val uses=store.all().count { it.barcodeId==entry.id }
+   caption(if(uses==1) "Used by 1 alarm" else "Used by $uses alarms")
+   actionRow {
+    button("Rename") { renameBarcode(entry) }
+    button("Delete",danger=true) {
+     if(uses>0) message("This barcode is used by an alarm. Change that alarm's barcode or delete the alarm first.")
+     else AlertDialog.Builder(this).setTitle("Delete ${entry.name}?").setMessage("Remove this barcode from your library?")
+      .setNegativeButton("Cancel",null).setPositiveButton("Delete") { _,_ -> attempt { store.deleteBarcode(entry.id);barcodes() } }.show()
+    }
+   }
+  } }
+  button("Scan new barcode",primary=true) { attempt { scan() } }
+  button(if(editing!=null) "Back to alarm" else "Back to alarms") {
+   showingBarcodes=false
+   if(editing!=null) editor() else home()
+  }
+ }
+ private fun renameBarcode(entry: SavedBarcode) {
+  val input=EditText(this).apply { setSingleLine(true);setText(entry.name);hint="Barcode name" }
+  val dialog=AlertDialog.Builder(this).setTitle("Rename barcode").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
+  dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { attempt {
+   Store(this).renameBarcode(entry.id,input.text.toString());dialog.dismiss();barcodes()
+  } } }
+  dialog.show()
+ }
+ private fun nameScannedBarcode() {
+  val code=pendingCode ?: return;val format=pendingFormat ?: return
+  val duplicate=Store(this).barcodes().find { Rules.matches(it.code,it.format,code,format) }
+  if(duplicate!=null) {
+   message("Already saved as ${duplicate.name}")
+   editing=editing?.copy(barcodeId=duplicate.id)
+   pendingCode=null;pendingFormat=null;return
+  }
+  val input=EditText(this).apply { setSingleLine(true);hint="e.g. Home bathroom shampoo";setText(pendingName) };nameInput=input
+  fun clearDraft() { pendingCode=null;pendingFormat=null;pendingName="";nameInput=null }
+  val dialog=AlertDialog.Builder(this).setTitle("Name your barcode").setView(input)
+   .setNegativeButton("Cancel") { _,_ -> clearDraft() }.setPositiveButton("Save",null).create()
+  dialog.setOnCancelListener { clearDraft() }
+  dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { attempt {
+   val added=Store(this).addBarcode(input.text.toString(),code,format)
+   editing=editing?.copy(barcodeId=added.id)
+   clearDraft();dialog.dismiss();barcodes()
+  } } }
+  dialog.show()
  }
  private fun test() {
   val a=Store(this).all().firstOrNull { !it.ringing }

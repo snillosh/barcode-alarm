@@ -88,3 +88,17 @@ Validation: debug build, 16 JVM tests, lint (warnings only), and scanner APK pac
 Open **Settings → Appearance → Dark mode** to turn the dark palette on or off. The setting applies immediately, stays on Settings after switching, and is saved independently of alarms. Light mode remains the default. Home, editor, ringing, maths, cards, buttons, native controls, and system-bar icons use the selected appearance. The scanner keeps its dark camera interface; Android's external sound picker and permission/settings screens follow system styling.
 
 Validation: debug APK assembly, all 16 JVM tests, Android lint (warnings only), and scanner packaging checks pass. The dark editor was visually checked in the emulator and the saved appearance preference was verified. Alarm scheduling and dismissal rules are unchanged.
+
+## Named barcode library (0.4.0)
+
+Open **Barcodes** from the home screen to scan and name an object or QR code (for example, “Home bathroom shampoo”). Rename entries or delete entries that are not used by any saved alarm. Names must be nonblank, unique ignoring case, and at most 120 characters. Rescanning an existing code reuses its entry, including equivalent UPC-A / EAN-13 representations. Codes themselves cannot be replaced in place; add a new entry instead.
+
+The alarm editor has a **Dismissal barcode** dropdown listing library names. A selection is required before saving. **Manage barcodes** opens the library while preserving the alarm draft and chosen time. Adding a code there selects it for the draft; return with **Back to alarm**. The home and ringing screens show the selected barcode's name. Renaming never changes the code that dismisses an alarm. Deleting an entry used by any saved alarm (including disabled alarms) is blocked; change those selections or delete those alarms first.
+
+On first use, existing alarm codes are imported as “Saved barcode 1”, etc., ready to rename. Matching codes share an entry. Migration saves the library and alarm links in one preferences transaction; it preserves each alarm's original code, configured time, scheduled timestamp, enabled/ringing state, and maths progress. Existing scheduled PendingIntents remain valid. Alarm playback and barcode comparison still use each alarm's saved dismissal value.
+
+The 22 new library unit tests cover naming validation, duplicates, UPC equivalence, selection requirements, per-alarm selection, immutable code values during renaming, deletion protection, migration deduplication and idempotence, and preservation of scheduled/ringing state. The 16 existing alarm tests remain in place.
+
+On the physical phone, verify upgrading retains your alarms, rename an imported entry, add a new scanned code, select it in the dropdown, and test correct/incorrect barcode dismissal. Check that an unused entry can be deleted but a referenced entry cannot, including while its alarm is disabled. Verify rotation and a trip through Manage barcodes retain your editor time and selection.
+
+Validation for 0.4.0: all **38 unit tests** pass; debug APK assembly, lint (warnings only), and scanner packaging checks pass. In a separate temporary Android emulator, old-format preferences were migrated, equivalent UPC/EAN codes deduplicated, original alarm times and dismissal values retained, a library entry renamed, deletion of a referenced entry blocked, a new alarm saved through the named dropdown, and persistence verified after process restart. Physical-camera registration and dismissal with the new library remain device checks.

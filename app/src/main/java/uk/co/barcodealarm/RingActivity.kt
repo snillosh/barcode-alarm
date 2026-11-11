@@ -30,6 +30,7 @@ class RingActivity: Screen() {
   label("%02d:%02d".format(a.hour,a.minute),64f).apply { typeface=android.graphics.Typeface.create("sans-serif-light",android.graphics.Typeface.NORMAL) }
   space(20)
   if(!maths) {
+   store.barcodes().find { it.id==a.barcodeId }?.let { caption("Scan ${it.name}") }
    button("Scan barcode",primary=true) { attempt { scan() } }
    button("Emergency maths challenge") {
     if(a.started<0) store.put(a.copy(started=SystemClock.elapsedRealtime()))

@@ -4,7 +4,7 @@ import java.time.*
 
 data class Alarm(val id: Int, val hour: Int, val minute: Int, val code: String, val format: String,
  val sound: String = "", val enabled: Boolean = false, val due: Long = 0, val ringing: Boolean = false,
- val started: Long = -1, val correct: Int = 0)
+ val started: Long = -1, val correct: Int = 0, val barcodeId: Int = 0)
 object Rules {
  fun next(hour: Int, minute: Int, now: ZonedDateTime): Long {
   var next = now.toLocalDate().atTime(hour, minute).atZone(now.zone)
