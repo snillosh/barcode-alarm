@@ -112,3 +112,21 @@ Navigation uses Android's platform `OnBackInvokedDispatcher` on Android 13+ and 
 Thirteen new navigation unit tests cover caller-aware returns, draft-change detection, discard decisions, page restoration and maths navigation; 51 JVM tests pass in total. Scheduling, persistence formats, barcode matching and challenge completion rules are unchanged. On the physical device, check both gesture Back and button Back, keyboard/dialog dismissal, returning from scanning to barcode management, and leaving/re-entering maths while an alarm is sounding.
 
 Validation for 0.5.0: debug APK assembly, all **51 unit tests**, lint (warnings only), and scanner packaging checks pass. A separate temporary Android emulator verified Settings → home with both system Back and an edge-swipe gesture; library → caller; an unchanged editor leaving without a prompt; changed barcode selections surviving nested navigation and offering keep/discard; page restoration after rotation; keyboard → dialog → page dismissal order; and home Back returning to the launcher. An actual answered maths question retained its count and monotonic start time after Back and re-entry, with the alarm foreground service still running.
+
+## Readability refactor (0.5.1)
+
+Start with [DEVELOPING.md](DEVELOPING.md) for a file map, C# / Kotlin syntax comparisons,
+Android lifecycle notes, and walkthroughs of creation, scheduling, ringing and dismissal.
+The code now uses descriptive model/member names, conventional formatting, named UI/action
+methods, and comments explaining Android-specific decisions. Receiver classes and the
+alarm/question models have their own files. No application dependencies were added.
+The saved-data keys, Android component identities, UI copy, scheduling rules and dismissal
+requirements are retained. This release is intended to change readability only.
+
+Validation for 0.5.1: all **51 unit tests**, debug APK assembly, Android lint (warnings only),
+and scanner packaging checks pass. The isolated emulator checks covered old-data migration,
+UPC/EAN deduplication, library renaming/deletion protection, dropdown saving, persistence after
+restart, draft protection, rotation, system/gesture Back, and maths progress after returning
+from the challenge. A real `setAlarmClock()` occurrence fired while the app was backgrounded,
+started the foreground playback service and consumed the saved one-shot occurrence.
+These are emulator checks; the readability refactor has not been tested on the physical phone.

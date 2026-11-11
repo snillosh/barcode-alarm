@@ -1,53 +1,124 @@
 package uk.co.barcodealarm
 
-/** A library code is immutable; renaming never changes an alarm's dismissal value. */
-data class SavedBarcode(val id: Int, val name: String, val code: String, val format: String)
+/** A scanned code cannot be edited in place; only its display name can change. */
+data class SavedBarcode(
+    val id: Int,
+    val name: String,
+    val barcodeValue: String,
+    val barcodeFormat: String,
+)
+
 data class BarcodeMigration(val barcodes: List<SavedBarcode>, val alarms: List<Alarm>)
 
+/** Pure library operations return new lists rather than modifying the caller's list. */
 object BarcodeLibrary {
- private fun checkedName(name: String, items: List<SavedBarcode>, except: Int=0): String {
-  val trimmed=name.trim()
-  require(trimmed.isNotEmpty()) { "Give this barcode a name" }
-  require(trimmed.length<=120) { "Use a name of at most 120 characters" }
-  require(items.none { it.id!=except && it.name.equals(trimmed,ignoreCase=true) }) { "That name is already in use" }
-  return trimmed
- }
- fun add(items: List<SavedBarcode>, name: String, code: String, format: String): List<SavedBarcode> {
-  require(code.isNotEmpty() && format.isNotEmpty()) { "Scan a barcode first" }
-  val duplicate=items.find { Rules.matches(it.code,it.format,code,format) }
-  require(duplicate==null) { "Already saved as ${duplicate?.name}" }
-  val entry=SavedBarcode((items.maxOfOrNull { it.id } ?: 0)+1,checkedName(name,items),code,format)
-  return items+entry
- }
- fun rename(items: List<SavedBarcode>, id: Int, name: String): List<SavedBarcode> {
-  require(items.any { it.id==id }) { "Barcode no longer exists" }
-  val checked=checkedName(name,items,id)
-  return items.map { if(it.id==id) it.copy(name=checked) else it }
- }
- fun delete(items: List<SavedBarcode>, id: Int, alarms: List<Alarm>): List<SavedBarcode> {
-  require(alarms.none { it.barcodeId==id }) { "This barcode is used by an alarm. Choose another barcode for that alarm or delete the alarm first." }
-  return items.filterNot { it.id==id }
- }
- fun select(a: Alarm, id: Int, items: List<SavedBarcode>): Alarm {
-  check(!a.ringing) { "Cannot edit a ringing alarm" }
-  val barcode=items.find { it.id==id } ?: throw IllegalArgumentException("Select a barcode from your library")
-  return a.copy(barcodeId=id,code=barcode.code,format=barcode.format)
- }
- /** Link old alarms atomically, preserving every scheduled/ringing occurrence and its code. */
- fun migrate(items: List<SavedBarcode>, alarms: List<Alarm>): BarcodeMigration {
-  var library=items
-  val migrated=alarms.map { a ->
-   if(a.barcodeId!=0 || a.code.isEmpty()) a else {
-    var entry=library.find { Rules.matches(it.code,it.format,a.code,a.format) }
-    if(entry==null) {
-     var number=1
-     while(library.any { it.name.equals("Saved barcode $number",ignoreCase=true) }) number++
-     library=add(library,"Saved barcode $number",a.code,a.format)
-     entry=library.last()
+    private fun validateName(
+        name: String,
+        barcodes: List<SavedBarcode>,
+        excludedId: Int = 0,
+    ): String {
+        val trimmedName = name.trim()
+        // require(...) throws IllegalArgumentException, similar to C# argument validation.
+        require(trimmedName.isNotEmpty()) { "Give this barcode a name" }
+        require(trimmedName.length <= 120) { "Use a name of at most 120 characters" }
+
+        val nameAlreadyUsed =
+            barcodes.any { barcode ->
+                barcode.id != excludedId && barcode.name.equals(trimmedName, ignoreCase = true)
+            }
+        require(!nameAlreadyUsed) { "That name is already in use" }
+        return trimmedName
     }
-    a.copy(barcodeId=entry.id)
-   }
-  }
-  return BarcodeMigration(library,migrated)
- }
+
+    fun add(
+        barcodes: List<SavedBarcode>,
+        name: String,
+        value: String,
+        format: String,
+    ): List<SavedBarcode> {
+        require(value.isNotEmpty() && format.isNotEmpty()) { "Scan a barcode first" }
+        val duplicate =
+            barcodes.find { barcode ->
+                AlarmRules.barcodesMatch(barcode.barcodeValue, barcode.barcodeFormat, value, format)
+            }
+        require(duplicate == null) { "Already saved as ${duplicate?.name}" }
+
+        val nextId = (barcodes.maxOfOrNull { barcode -> barcode.id } ?: 0) + 1
+        val barcode = SavedBarcode(nextId, validateName(name, barcodes), value, format)
+        return barcodes + barcode
+    }
+
+    fun rename(barcodes: List<SavedBarcode>, id: Int, name: String): List<SavedBarcode> {
+        require(barcodes.any { barcode -> barcode.id == id }) { "Barcode no longer exists" }
+        val validatedName = validateName(name, barcodes, excludedId = id)
+        return barcodes.map { barcode ->
+            if (barcode.id == id) barcode.copy(name = validatedName) else barcode
+        }
+    }
+
+    fun delete(barcodes: List<SavedBarcode>, id: Int, alarms: List<Alarm>): List<SavedBarcode> {
+        val isUsedByAlarm = alarms.any { alarm -> alarm.barcodeId == id }
+        require(!isUsedByAlarm) {
+            "This barcode is used by an alarm. Choose another barcode for that alarm or delete the alarm first."
+        }
+        return barcodes.filterNot { barcode -> barcode.id == id }
+    }
+
+    fun select(alarm: Alarm, id: Int, barcodes: List<SavedBarcode>): Alarm {
+        check(!alarm.isRinging) { "Cannot edit a ringing alarm" }
+        val selectedBarcode =
+            barcodes.find { barcode -> barcode.id == id }
+                ?: throw IllegalArgumentException("Select a barcode from your library")
+
+        return alarm.copy(
+            barcodeId = selectedBarcode.id,
+            barcodeValue = selectedBarcode.barcodeValue,
+            barcodeFormat = selectedBarcode.barcodeFormat,
+        )
+    }
+
+    fun migrate(barcodes: List<SavedBarcode>, alarms: List<Alarm>): BarcodeMigration {
+        var library = barcodes
+        val migratedAlarms = mutableListOf<Alarm>()
+
+        for (alarm in alarms) {
+            if (alarm.barcodeId != 0 || alarm.barcodeValue.isEmpty()) {
+                migratedAlarms.add(alarm)
+                continue
+            }
+
+            var matchingBarcode =
+                library.find { barcode ->
+                    AlarmRules.barcodesMatch(
+                        barcode.barcodeValue,
+                        barcode.barcodeFormat,
+                        alarm.barcodeValue,
+                        alarm.barcodeFormat,
+                    )
+                }
+            if (matchingBarcode == null) {
+                var nameNumber = 1
+                while (
+                    library.any { barcode ->
+                        barcode.name.equals("Saved barcode $nameNumber", ignoreCase = true)
+                    }
+                ) {
+                    nameNumber++
+                }
+                library =
+                    add(
+                        library,
+                        "Saved barcode $nameNumber",
+                        alarm.barcodeValue,
+                        alarm.barcodeFormat,
+                    )
+                matchingBarcode = library.last()
+            }
+
+            // Only add the link. Scheduled times, ringing state, maths progress and code stay
+            // intact.
+            migratedAlarms.add(alarm.copy(barcodeId = matchingBarcode.id))
+        }
+        return BarcodeMigration(library, migratedAlarms)
+    }
 }

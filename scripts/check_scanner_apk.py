@@ -1,36 +1,74 @@
 #!/usr/bin/env python3
-"""Check release packaging for scanner classes that JVM unit tests cannot exercise."""
+"""Check that the built APK defines the scanner's required runtime classes.
+
+JVM tests cannot detect a missing class inside an installed Android APK. Inspect
+actual DEX definitions, because the broken APK also contained references to the
+missing AndroidX classes. A matching string alone would be a false positive.
+"""
+
+import struct
 import sys
 import zipfile
 from pathlib import Path
 
-apk = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / 'app/build/outputs/apk/debug/app-debug.apk'
-required = (
-    b'Landroidx/core/content/ContextCompat;',
-    b'Landroidx/core/app/ActivityCompat;',
-    b'Lcom/journeyapps/barcodescanner/CaptureActivity;',
-    b'Lcom/google/zxing/MultiFormatReader;',
+REQUIRED_CLASSES = (
+    b"Landroidx/core/content/ContextCompat;",
+    b"Landroidx/core/app/ActivityCompat;",
+    b"Lcom/journeyapps/barcodescanner/CaptureActivity;",
+    b"Lcom/google/zxing/MultiFormatReader;",
 )
-# Read DEX class_defs rather than string references: a reference alone would also
-# be present in the broken APK and would not establish that the class is defined.
-import struct
-with zipfile.ZipFile(apk) as archive:
-    defined = set()
-    for name in archive.namelist():
-        if not (name.startswith('classes') and name.endswith('.dex')):
-            continue
-        data = archive.read(name)
-        string_count, string_offset, type_count, type_offset = struct.unpack_from('<4I', data, 56)
-        class_count, class_offset = struct.unpack_from('<2I', data, 96)
-        for i in range(class_count):
-            type_index = struct.unpack_from('<I', data, class_offset + i * 32)[0]
-            string_index = struct.unpack_from('<I', data, type_offset + type_index * 4)[0]
-            offset = struct.unpack_from('<I', data, string_offset + string_index * 4)[0]
-            while data[offset] & 0x80:  # Skip ULEB128 UTF-16 length.
-                offset += 1
-            offset += 1
-            defined.add(data[offset:data.index(b'\0', offset)])
-missing = [item.decode() for item in required if item not in defined]
-if missing:
-    sys.exit('Missing scanner classes: ' + ', '.join(missing))
-print('PASS: APK defines all four required scanner/runtime classes')
+DEFAULT_APK = (
+    Path(__file__).resolve().parents[1]
+    / "app/build/outputs/apk/debug/app-debug.apk"
+)
+
+
+def read_defined_classes(dex_data: bytes) -> set[bytes]:
+    """Follow DEX class -> type -> string indexes to collect defined class names."""
+    # Fixed offsets in the DEX header locate the string, type, and class tables.
+    _, string_table_offset, _, type_table_offset = struct.unpack_from(
+        "<4I", dex_data, 56
+    )
+    class_count, class_table_offset = struct.unpack_from("<2I", dex_data, 96)
+    class_names = set()
+
+    for class_index in range(class_count):
+        class_definition_offset = class_table_offset + class_index * 32
+        type_index = struct.unpack_from("<I", dex_data, class_definition_offset)[0]
+        string_index = struct.unpack_from(
+            "<I", dex_data, type_table_offset + type_index * 4
+        )[0]
+        string_offset = struct.unpack_from(
+            "<I", dex_data, string_table_offset + string_index * 4
+        )[0]
+
+        # Each string starts with its ULEB128-encoded UTF-16 character count.
+        while dex_data[string_offset] & 0x80:
+            string_offset += 1
+        string_offset += 1
+        string_end = dex_data.index(b"\0", string_offset)
+        class_names.add(dex_data[string_offset:string_end])
+
+    return class_names
+
+
+def main() -> None:
+    apk_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_APK
+    defined_classes = set()
+    with zipfile.ZipFile(apk_path) as archive:
+        for filename in archive.namelist():
+            if filename.startswith("classes") and filename.endswith(".dex"):
+                defined_classes.update(read_defined_classes(archive.read(filename)))
+
+    missing_classes = [
+        class_name.decode()
+        for class_name in REQUIRED_CLASSES
+        if class_name not in defined_classes
+    ]
+    if missing_classes:
+        sys.exit("Missing scanner classes: " + ", ".join(missing_classes))
+    print("PASS: APK defines all four required scanner/runtime classes")
+
+
+if __name__ == "__main__":
+    main()

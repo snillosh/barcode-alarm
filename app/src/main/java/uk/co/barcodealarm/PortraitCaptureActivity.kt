@@ -1,4 +1,6 @@
 package uk.co.barcodealarm
 
-/** Separate activity gives ZXing a portrait camera without changing scanner logic. */
-class PortraitCaptureActivity: com.journeyapps.barcodescanner.CaptureActivity()
+import com.journeyapps.barcodescanner.CaptureActivity
+
+/** ZXing supplies scanning; the manifest fixes this Activity's camera orientation to portrait. */
+class PortraitCaptureActivity : CaptureActivity()
