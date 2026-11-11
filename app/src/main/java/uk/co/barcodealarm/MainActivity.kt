@@ -15,34 +15,32 @@ import android.content.res.ColorStateList
 import android.graphics.Typeface
 
 class MainActivity: Screen() {
- private var showingBarcodes=false
+ private var currentPage=Page.HOME
  private var pendingCode: String?=null
  private var pendingFormat: String?=null
  private var pendingName=""
  private var nameInput: EditText?=null
- private var showingSettings=false
  private var editing: Alarm?=null
  private var picker: TimePicker?=null
  override fun onCreate(state: Bundle?) {
   super.onCreate(state)
   state?.getInt("editing",-1)?.takeIf { it>=0 }?.let { id -> editing=Store(this).get(id) ?: Alarm(id,7,0,"","") }
   if(state!=null && editing!=null) editing=editing!!.copy(hour=state.getInt("hour"),minute=state.getInt("minute"),code=state.getString("code", ""),format=state.getString("format", ""),sound=state.getString("sound", ""),barcodeId=state.getInt("barcodeId"))
-  showingSettings=state?.getBoolean("settings") ?: false
-  showingBarcodes=state?.getBoolean("barcodes") ?: false
+  currentPage=Navigation.restorePage(state?.getString("page"),editing!=null)
   pendingCode=state?.getString("pendingCode");pendingFormat=state?.getString("pendingFormat")
   pendingName=state?.getString("pendingName").orEmpty()
-  if(showingBarcodes) barcodes() else if(editing!=null) editor() else if(showingSettings) settings() else home()
+  when(currentPage) { Page.BARCODES -> barcodes();Page.EDITOR -> editor();Page.SETTINGS -> settings();Page.HOME -> home() }
   if(pendingCode!=null) nameScannedBarcode()
  }
  override fun onSaveInstanceState(out: Bundle) {
-  out.putBoolean("settings",showingSettings);out.putBoolean("barcodes",showingBarcodes)
+  out.putString("page",currentPage.name)
   out.putString("pendingCode",pendingCode);out.putString("pendingFormat",pendingFormat)
   out.putString("pendingName",nameInput?.text?.toString() ?: pendingName)
   editing?.let { a -> out.putInt("editing",a.id);out.putInt("hour",picker?.hour ?: a.hour);out.putInt("minute",picker?.minute ?: a.minute);out.putString("code",a.code);out.putString("format",a.format);out.putString("sound",a.sound);out.putInt("barcodeId",a.barcodeId) };super.onSaveInstanceState(out)
  }
- override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else if(!showingBarcodes && editing==null) { if(showingSettings) settings() else home() } }
+ override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else when(currentPage) { Page.SETTINGS -> settings();Page.HOME -> home();else -> Unit } }
  private fun home() {
-  showingSettings=false;showingBarcodes=false
+  currentPage=Page.HOME
   page("Your alarms", "A deliberate start to your day.");picker=null
   if(Build.VERSION.SDK_INT>=31 && !getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) {
    Store(this).all().filter { it.enabled }.forEach { Store(this).put(it.copy(enabled=false,due=0)) }
@@ -80,9 +78,38 @@ class MainActivity: Screen() {
   button("Barcodes") { barcodes() }
   button("Test alarm") { test() };button("Settings & diagnostics") { settings() }
  }
- private fun captureTime() { editing=editing?.copy(hour=picker?.hour ?: 7,minute=picker?.minute ?: 0) }
+ private fun captureTime() {
+  val time=picker ?: return
+  time.clearFocus()
+  editing=editing?.copy(hour=time.hour,minute=time.minute)
+ }
+ private var discardDialog: AlertDialog?=null
+ private fun navigateBack() {
+  if(currentPage==Page.EDITOR) captureTime()
+  val draft=editing
+  val changed=draft?.let { Navigation.changed(it,Store(this).get(it.id)) } ?: false
+  when(Navigation.back(currentPage,draft!=null,changed)) {
+   BackDestination.HOME -> { editing=null;home() }
+   BackDestination.EDITOR -> editor()
+   BackDestination.CONFIRM_DISCARD -> {
+    if(discardDialog?.isShowing==true) return
+    discardDialog=AlertDialog.Builder(this).setTitle("Discard changes?")
+     .setMessage("Your unsaved alarm changes will be lost.")
+     .setNegativeButton("Keep editing",null)
+     .setPositiveButton("Discard") { _,_ -> editing=null;home() }.show()
+   }
+   else -> Unit
+  }
+ }
+ override fun onDestroy() {
+  discardDialog?.dismiss()
+  super.onDestroy()
+ }
  private fun editor() {
-  val a=editing ?: return;page("Set your alarm", "One time. Your chosen place to start.")
+  val a=editing ?: return
+  currentPage=Page.EDITOR
+  page("Set your alarm", "One time. Your chosen place to start.")
+  setBackAction { navigateBack() }
   caption("WAKE-UP TIME")
   picker=TimePicker(this).apply { setIs24HourView(true);hour=a.hour;minute=a.minute };body.addView(picker)
   space(12)
@@ -111,7 +138,7 @@ class MainActivity: Screen() {
    if(updated.enabled) Scheduling(this).enable(updated) else Store(this).put(updated)
    editing=null;home()
   } }
-  button("Cancel") { editing=null;home() }
+  button("Cancel") { navigateBack() }
  }
  @Deprecated("Android result API") override fun onActivityResult(request: Int,result: Int,data: Intent?) {
   super.onActivityResult(request,result,data)
@@ -125,8 +152,9 @@ class MainActivity: Screen() {
   else if(request==42 && result==RESULT_OK) { val uri=data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);editing=editing?.copy(sound=uri?.toString().orEmpty());editor() }
  }
  private fun barcodes() {
-  showingBarcodes=true;showingSettings=false;picker=null
+  currentPage=Page.BARCODES;picker=null
   page("Barcodes", "Familiar names. One less thing to think about.")
+  setBackAction { navigateBack() }
   val store=Store(this)
   val library=store.barcodes().sortedBy { it.name.lowercase(java.util.Locale.ROOT) }
   if(library.isEmpty()) card { label("Your barcode library",22f);caption("Scan an everyday object or QR code and give it a name, such as Home bathroom shampoo.") }
@@ -145,8 +173,7 @@ class MainActivity: Screen() {
   } }
   button("Scan new barcode",primary=true) { attempt { scan() } }
   button(if(editing!=null) "Back to alarm" else "Back to alarms") {
-   showingBarcodes=false
-   if(editing!=null) editor() else home()
+   navigateBack()
   }
  }
  private fun renameBarcode(entry: SavedBarcode) {
@@ -183,8 +210,9 @@ class MainActivity: Screen() {
   AlertDialog.Builder(this).setMessage("Schedule ${a.hour}:${a.minute.toString().padStart(2,'0')} for 10 seconds from now? This replaces its scheduled occurrence and requires barcode or maths dismissal.").setPositiveButton("Test") { _,_ -> attempt { Scheduling(this).enable(a,System.currentTimeMillis()+10000);home() } }.setNegativeButton("Cancel",null).show()
  }
  private fun settings() {
-  showingSettings=true
+  currentPage=Page.SETTINGS
   page("Settings", "A few essentials for dependable mornings.")
+  setBackAction { navigateBack() }
   caption("APPEARANCE")
   card {
    body.addView(Switch(this).apply {
@@ -218,6 +246,6 @@ class MainActivity: Screen() {
   caption("BATTERY & DEVICE")
   caption("In app settings, open Battery and select Unrestricted. After reboot, unlock once. Missed alarms are disabled; review diagnostics.")
   button("Battery / app settings") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName"))) }
-  button("Test alarm") { test() };space(16);caption("LOCAL DIAGNOSTICS");card { label(Store(this).logs(),12f).typeface=Typeface.MONOSPACE };button("Back to alarms") { home() }
+  button("Test alarm") { test() };space(16);caption("LOCAL DIAGNOSTICS");card { label(Store(this).logs(),12f).typeface=Typeface.MONOSPACE };button("Back to alarms") { navigateBack() }
  }
 }

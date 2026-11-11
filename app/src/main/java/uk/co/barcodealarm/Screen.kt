@@ -28,12 +28,39 @@ open class Screen: Activity() {
   setTheme(if(darkMode) R.style.AppTheme_Dark else R.style.AppTheme)
   super.onCreate(state)
  }
+ // Register only on inner pages: Android retains normal root Back behaviour.
+ private var backAction: (() -> Unit)?=null
+ private var backCallback: android.window.OnBackInvokedCallback?=null
+ protected fun setBackAction(action: (() -> Unit)?) {
+  backAction=action
+  if(Build.VERSION.SDK_INT>=33) {
+   backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+   backCallback=null
+   if(action!=null) {
+    val callback=android.window.OnBackInvokedCallback { backAction?.invoke() }
+    backCallback=callback
+    onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback)
+   }
+  }
+ }
+ // This override serves API 28–32 only; API 33+ uses the dispatcher above.
+ @android.annotation.SuppressLint("GestureBackNavigation")
+ @Deprecated("Compatibility for Android 9–12; newer Android uses OnBackInvokedCallback")
+ override fun onBackPressed() {
+  val action=backAction
+  if(action!=null) action() else super.onBackPressed()
+ }
+ override fun onDestroy() {
+  setBackAction(null)
+  super.onDestroy()
+ }
  lateinit var body: LinearLayout
  fun dp(value: Int)=(value*resources.displayMetrics.density).toInt()
  fun shape(color: Int, radius: Int=22, border: Int?=null)=GradientDrawable().apply {
   setColor(color);cornerRadius=dp(radius).toFloat();border?.let { setStroke(dp(1),it) }
  }
  fun page(title: String, subtitle: String?=null) {
+  setBackAction(null)
   window.statusBarColor=paper;window.navigationBarColor=paper
   window.decorView.systemUiVisibility=if(darkMode) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
   body=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(24),dp(24),dp(24),dp(28)) }

@@ -20,6 +20,9 @@ class RingActivity: Screen() {
  override fun onSaveInstanceState(out: Bundle) { out.putBoolean("maths",maths);super.onSaveInstanceState(out) }
  override fun onResume() { super.onResume();RingService.mathsVisible=maths;handler.post(tick);draw() }
  override fun onPause() { RingService.mathsVisible=false;handler.removeCallbacks(tick);super.onPause() }
+ private fun returnToRinging() {
+  maths=false;RingService.mathsVisible=false;draw()
+ }
  private fun remaining(a: Alarm): String {
   val ms=(300000-(SystemClock.elapsedRealtime()-a.started)).coerceAtLeast(0)
   return "Remaining: ${ms/60000}:${((ms/1000)%60).toString().padStart(2,'0')}"
@@ -27,6 +30,7 @@ class RingActivity: Screen() {
  private fun draw() {
   val a=active() ?: run { finish();return }
   page(if(maths) "Stay with it" else "Time to get up", if(maths) "Five minutes. Fifteen correct answers." else "Your morning starts with a small step.")
+  if(Navigation.ringingBack(maths)==BackDestination.RINGING) setBackAction { returnToRinging() }
   label("%02d:%02d".format(a.hour,a.minute),64f).apply { typeface=android.graphics.Typeface.create("sans-serif-light",android.graphics.Typeface.NORMAL) }
   space(20)
   if(!maths) {
@@ -50,7 +54,7 @@ class RingActivity: Screen() {
      question=Question.create();draw()
     } } } }
    } else label("Questions complete. Keep this challenge open until the timer finishes.")
-   button("Return to barcode scanner") { maths=false;RingService.mathsVisible=false;draw() }
+   button("Return to barcode scanner") { returnToRinging() }
   }
  }
  private fun dismiss(a: Alarm) {
