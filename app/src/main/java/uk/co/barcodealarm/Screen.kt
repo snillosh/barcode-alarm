@@ -15,10 +15,19 @@ import com.google.zxing.integration.android.IntentIntegrator
 
 /** Native views only: shared spacing, typography and accessible touch targets. */
 open class Screen: Activity() {
- protected val ink=Color.rgb(25,39,36)
- protected val muted=Color.rgb(91,108,101)
- protected val green=Color.rgb(36,91,69)
- protected val paper=Color.rgb(245,247,242)
+ protected val darkMode get()=getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("dark_mode",false)
+ protected val ink get()=getColor(if(darkMode) R.color.dark_ink else R.color.light_ink)
+ protected val muted get()=getColor(if(darkMode) R.color.dark_muted else R.color.light_muted)
+ protected val green get()=getColor(if(darkMode) R.color.dark_accent else R.color.light_accent)
+ protected val paper get()=getColor(if(darkMode) R.color.dark_background else R.color.light_background)
+ private val surface get()=getColor(if(darkMode) R.color.dark_surface else R.color.light_surface)
+ private val border get()=getColor(if(darkMode) R.color.dark_border else R.color.light_border)
+ private val secondary get()=getColor(if(darkMode) R.color.dark_secondary else R.color.light_secondary)
+ private val onAccent get()=getColor(if(darkMode) R.color.dark_on_accent else R.color.light_on_accent)
+ override fun onCreate(state: android.os.Bundle?) {
+  setTheme(if(darkMode) R.style.AppTheme_Dark else R.style.AppTheme)
+  super.onCreate(state)
+ }
  lateinit var body: LinearLayout
  fun dp(value: Int)=(value*resources.displayMetrics.density).toInt()
  fun shape(color: Int, radius: Int=22, border: Int?=null)=GradientDrawable().apply {
@@ -26,7 +35,7 @@ open class Screen: Activity() {
  }
  fun page(title: String, subtitle: String?=null) {
   window.statusBarColor=paper;window.navigationBarColor=paper
-  window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+  window.decorView.systemUiVisibility=if(darkMode) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
   body=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(24),dp(24),dp(24),dp(28)) }
   val scroll=ScrollView(this).apply { setBackgroundColor(paper);isFillViewport=true;clipToPadding=false;addView(body) }
   scroll.setOnApplyWindowInsetsListener { view,insets ->
@@ -51,7 +60,7 @@ open class Screen: Activity() {
   val parent=body
   val box=LinearLayout(this).apply {
    orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(20),dp(20),dp(14))
-   background=shape(Color.WHITE,24,Color.rgb(224,231,222))
+   background=shape(surface,24,border)
    layoutParams=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(16) }
   }
   parent.addView(box);body=box
@@ -67,8 +76,8 @@ open class Screen: Activity() {
   body.addView(Button(this).apply {
    stateListAnimator=null;elevation=0f
    this.text=text;isAllCaps=false;textSize=16f;typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-   setTextColor(if(primary) Color.WHITE else if(danger) Color.rgb(151,54,49) else green)
-   background=RippleDrawable(ColorStateList.valueOf(Color.argb(35,80,110,90)),shape(if(primary) green else Color.rgb(234,240,231),16),null)
+   setTextColor(if(primary) onAccent else if(danger) (if(darkMode) Color.rgb(255,177,170) else Color.rgb(151,54,49)) else green)
+   background=RippleDrawable(ColorStateList.valueOf(if(darkMode) Color.argb(45,200,240,210) else Color.argb(35,80,110,90)),shape(if(primary) green else secondary,16),null)
    minHeight=dp(54);minimumHeight=dp(54);gravity=Gravity.CENTER
    setPadding(dp(16),dp(12),dp(16),dp(12))
    layoutParams=(if(body.orientation==LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0,-2,1f) else LinearLayout.LayoutParams(-1,-2)).apply {

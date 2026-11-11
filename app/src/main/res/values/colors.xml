@@ -1,0 +1,10 @@
+<resources>
+ <color name="light_background">#F5F7F2</color><color name="dark_background">#121916</color>
+ <color name="light_ink">#192724</color><color name="dark_ink">#E7EFE9</color>
+ <color name="light_muted">#5B6C65</color><color name="dark_muted">#ADBCB2</color>
+ <color name="light_accent">#245B45</color><color name="dark_accent">#A4D5B5</color>
+ <color name="light_surface">#FFFFFF</color><color name="dark_surface">#1C2721</color>
+ <color name="light_border">#E0E7DE</color><color name="dark_border">#35453B</color>
+ <color name="light_secondary">#EAF0E7</color><color name="dark_secondary">#293A30</color>
+ <color name="light_on_accent">#FFFFFF</color><color name="dark_on_accent">#102D1D</color>
+</resources>

@@ -82,3 +82,9 @@ The interface now uses a light neutral palette, deep green controls, rounded ala
 Barcode registration and dismissal now share a portrait-only ZXing capture activity. Version code 3 can be installed over the previous debug build while retaining saved alarms.
 
 Validation: debug build, 16 JVM tests, lint (warnings only), and scanner APK packaging check pass. Home and editor layouts were inspected in the Pixel emulator, and the running scanner was confirmed in portrait (`ROTATION_0`). A user reported successful physical-device testing of the previous version; this visual refresh still needs a quick check on that device, particularly portrait scanning, large font sizes, and the ringing/maths layouts.
+
+## Dark mode (0.3.0)
+
+Open **Settings → Appearance → Dark mode** to turn the dark palette on or off. The setting applies immediately, stays on Settings after switching, and is saved independently of alarms. Light mode remains the default. Home, editor, ringing, maths, cards, buttons, native controls, and system-bar icons use the selected appearance. The scanner keeps its dark camera interface; Android's external sound picker and permission/settings screens follow system styling.
+
+Validation: debug APK assembly, all 16 JVM tests, Android lint (warnings only), and scanner packaging checks pass. The dark editor was visually checked in the emulator and the saved appearance preference was verified. Alarm scheduling and dismissal rules are unchanged.

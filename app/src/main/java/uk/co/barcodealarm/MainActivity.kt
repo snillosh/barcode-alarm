@@ -15,19 +15,23 @@ import android.content.res.ColorStateList
 import android.graphics.Typeface
 
 class MainActivity: Screen() {
+ private var showingSettings=false
  private var editing: Alarm?=null
  private var picker: TimePicker?=null
  override fun onCreate(state: Bundle?) {
   super.onCreate(state)
   state?.getInt("editing",-1)?.takeIf { it>=0 }?.let { id -> editing=Store(this).get(id) ?: Alarm(id,7,0,"","") }
   if(state!=null && editing!=null) editing=editing!!.copy(hour=state.getInt("hour"),minute=state.getInt("minute"),code=state.getString("code", ""),format=state.getString("format", ""),sound=state.getString("sound", ""))
-  if(editing!=null) editor() else home()
+  showingSettings=state?.getBoolean("settings") ?: false
+  if(editing!=null) editor() else if(showingSettings) settings() else home()
  }
  override fun onSaveInstanceState(out: Bundle) {
+  out.putBoolean("settings",showingSettings)
   editing?.let { a -> out.putInt("editing",a.id);out.putInt("hour",picker?.hour ?: a.hour);out.putInt("minute",picker?.minute ?: a.minute);out.putString("code",a.code);out.putString("format",a.format);out.putString("sound",a.sound) };super.onSaveInstanceState(out)
  }
- override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else if(editing==null) home() }
+ override fun onResume() { super.onResume(); if(Store(this).all().any { it.ringing }) { startForegroundService(Intent(this,RingService::class.java));startActivity(Intent(this,RingActivity::class.java)) } else if(editing==null) { if(showingSettings) settings() else home() } }
  private fun home() {
+  showingSettings=false
   page("Your alarms", "A deliberate start to your day.");picker=null
   if(Build.VERSION.SDK_INT>=31 && !getSystemService(AlarmManager::class.java).canScheduleExactAlarms()) {
    Store(this).all().filter { it.enabled }.forEach { Store(this).put(it.copy(enabled=false,due=0)) }
@@ -95,7 +99,20 @@ class MainActivity: Screen() {
   AlertDialog.Builder(this).setMessage("Schedule ${a.hour}:${a.minute.toString().padStart(2,'0')} for 10 seconds from now? This replaces its scheduled occurrence and requires barcode or maths dismissal.").setPositiveButton("Test") { _,_ -> attempt { Scheduling(this).enable(a,System.currentTimeMillis()+10000);home() } }.setNegativeButton("Cancel",null).show()
  }
  private fun settings() {
+  showingSettings=true
   page("Settings", "A few essentials for dependable mornings.")
+  caption("APPEARANCE")
+  card {
+   body.addView(Switch(this).apply {
+    text="Dark mode";textSize=18f;setTextColor(ink)
+    minimumHeight=dp(56);isChecked=darkMode
+    setOnCheckedChangeListener { _,enabled -> attempt {
+     check(getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("dark_mode",enabled).commit()) { "Could not save appearance" }
+     recreate()
+    } }
+   })
+   caption("Use a darker palette across the app. Your choice is saved on this device.")
+  }
   caption("PERMISSIONS & ACCESS")
   val exact=Build.VERSION.SDK_INT<31 || getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
   card {
