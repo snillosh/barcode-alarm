@@ -110,6 +110,7 @@ class RingActivity : BaseActivity() {
                         setOf(OccurrenceStage.VERIFY_DELAY, OccurrenceStage.VERIFY_RESPONSE)
             ) {
                 showPage("Are you still awake?")
+                addCaption(AlarmOverview.displayLabel(verification.snapshot))
                 addButton("I'm Awake", primary = true) {
                     runUiAction {
                         OccurrenceManager(this).event(verification.id, "awake", 0)
@@ -124,6 +125,7 @@ class RingActivity : BaseActivity() {
             if (isMathsVisible) "Five minutes. Fifteen correct answers."
             else "Your morning starts with a small step."
         showPage(title, subtitle)
+        addText(AlarmOverview.displayLabel(alarm), 24f)
         if (Navigation.ringingBack(isMathsVisible) == BackDestination.RINGING) {
             setBackAction { returnToRinging() }
         }

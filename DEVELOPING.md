@@ -279,3 +279,18 @@ Escalation's fullVolume flag bypasses only the ramp, retaining maths gain attenu
 Definition cancellation explicitly clears all dependent workflows. Repeat registration is
 independent of an older occurrence's verification. Legacy active definitions migrate into
 snapshots on opening/restoration; existing scheduled definition PendingIntents stay valid.
+
+## Alarm-list conveniences (0.9.0)
+
+`AlarmOverview` owns label normalization/defaults, clean duplication, selection of saved future
+scheduled definitions and shared duration/date presentation. It deliberately reads registered
+`scheduledAtMillis` values rather than projecting a new date from the clock controls. Scheduling
+still belongs to `AlarmScheduler`, whose enable method now returns the successfully registered
+record so UI success feedback cannot run on its failure path. Background callers ignore that
+return value and never show a toast.
+
+`AlarmStore.nextAlarmId()` reserves IDs synchronously for new drafts and duplicates. JSON adds
+an optional `label` key with a blank default; no destructive migration is needed. Occurrence
+snapshot serialization automatically carries labels. `MainActivity` uses native EditText and
+existing cards/buttons/Toast, with a lifecycle-scoped home countdown callback and clock-change
+receiver. Tests supply explicit wall-clock instants and local zones, including both DST changes.

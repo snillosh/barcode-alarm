@@ -18,6 +18,18 @@ class AlarmStore(private val context: Context) {
         return readAlarms()
     }
 
+    /** Reserve IDs durably, including unsaved drafts; deleted IDs must not be reused. */
+    fun nextAlarmId(): Int {
+        val largestSavedId = getAlarms().maxOfOrNull { it.id } ?: 0
+        val lastId = maxOf(preferences.getInt("last_alarm_id", 0), largestSavedId)
+        check(lastId < Int.MAX_VALUE) { "No alarm IDs available" }
+        val id = lastId + 1
+        check(preferences.edit().putInt("last_alarm_id", id).commit()) {
+            "Could not reserve alarm ID"
+        }
+        return id
+    }
+
     fun getAlarm(id: Int): Alarm? {
         return getAlarms().find { alarm -> alarm.id == id }
     }

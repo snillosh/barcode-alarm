@@ -300,8 +300,13 @@ open class BaseActivity : Activity() {
         return layout
     }
 
-    protected fun showMessage(text: String) {
-        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+    private var currentMessage: Toast? = null
+
+    protected fun showMessage(text: String, short: Boolean = false) {
+        currentMessage?.cancel()
+        currentMessage =
+            Toast.makeText(this, text, if (short) Toast.LENGTH_SHORT else Toast.LENGTH_LONG)
+        currentMessage?.show()
     }
 
     protected fun runUiAction(action: () -> Unit) {

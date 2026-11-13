@@ -18,6 +18,7 @@ object AlarmJsonCodec {
                     minute = json.getInt("minute"),
                     barcodeValue = json.getString("code"),
                     barcodeFormat = json.getString("format"),
+                    label = AlarmOverview.cleanLabel(json.optString("label")),
                     soundUri = json.optString("sound"),
                     isEnabled = json.optBoolean("enabled"),
                     scheduledAtMillis = json.optLong("due"),
@@ -63,6 +64,7 @@ object AlarmJsonCodec {
             json.put("minute", alarm.minute)
             json.put("code", alarm.barcodeValue)
             json.put("format", alarm.barcodeFormat)
+            json.put("label", AlarmOverview.cleanLabel(alarm.label))
             json.put("sound", alarm.soundUri)
             json.put("enabled", alarm.isEnabled)
             json.put("due", alarm.scheduledAtMillis)

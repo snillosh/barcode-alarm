@@ -57,7 +57,7 @@ class AlarmScheduler(private val context: Context) {
                 ZonedDateTime.now(),
                 alarm.repeatDays,
             ),
-    ) {
+    ): Alarm {
         check(!alarm.isRinging) { "Alarm is ringing" }
         cancel(alarm)
 
@@ -71,6 +71,7 @@ class AlarmScheduler(private val context: Context) {
             store.log("Schedule failed: $exception")
             throw exception
         }
+        return enabledAlarm
     }
 
     fun snooze(alarm: Alarm) {

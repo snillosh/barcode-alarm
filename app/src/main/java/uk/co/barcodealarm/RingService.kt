@@ -100,10 +100,13 @@ class RingService : Service() {
             )
         return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_alarm_notification)
-            .setContentTitle("Barcode alarm ringing")
+            .setContentTitle(
+                "${store.getAlarms().firstOrNull()?.let { AlarmOverview.displayLabel(it) } ?: "Alarm"} ringing"
+            )
             .setContentText("Open your alarm to dismiss or snooze")
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(openRingingScreen)
             .setFullScreenIntent(openRingingScreen, true)
@@ -119,6 +122,8 @@ class RingService : Service() {
         }
         if (playingAlarmId != alarm.id) {
             startAlarmPlayback(alarm)
+            getSystemService(NotificationManager::class.java)
+                .notify(NOTIFICATION_ID, createRingingNotification())
         }
         // Set only this player's gain. Do not change Android's alarm stream or other apps' volume.
         val playbackVolume = calculatePlaybackGain()

@@ -293,3 +293,47 @@ second-stage waiting and full-gain timeout escalation, escalation with notificat
 denied, and deletion stopping an active follow-up. Fixture deadlines were shortened for
 these tests. Physical camera, audible volume, lock-screen policy and overnight GrapheneOS
 delivery still require the device checklist above.
+
+## Labels and alarm-list conveniences (0.9.0)
+
+Alarms now have an optional **Alarm label** (trimmed, up to 50 characters). A blank label
+appears as **Alarm**. Existing JSON without a label loads normally. Labels appear on alarm
+cards, the ringing/maths and verification screens, and ringing/follow-up notifications.
+Active occurrences retain their original snapshot's label when a definition is renamed.
+
+**Duplicate** saves a separate disabled alarm with the same configuration and shared barcode
+and sound references. It never schedules anything or copies an active occurrence, snooze,
+maths progress, verification progress or playback timer. IDs are durably reserved and are
+not reused after deletion. Snooze duration and gradual volume remain app-wide settings;
+duplicates use those same settings just like other alarms.
+
+The **Next alarm** card uses enabled definitions' saved future scheduled timestamps, showing
+local date/time, label and time remaining. It excludes expired/ringing definitions and never
+counts occurrence follow-up deadlines as ordinary alarms. It refreshes after list/editor
+changes, foregrounding, system clock/zone changes, and once per minute while home is visible
+(or at the next alarm's deadline, if sooner). It does not schedule alarms or keep a service
+alive. DST/calendar scheduling remains in the existing alarm scheduler.
+
+Successfully enabling an alarm, including resaving an enabled alarm from the editor, shows a
+brief **Alarm set for … from now** toast using the actual registered time. Failed registration
+shows the existing diagnostic; disabling, snoozing and follow-up events show no success toast.
+Rapid messages replace the previous toast rather than forming a queue.
+
+Manual checks:
+
+- Upgrade with existing alarms; check the default label and unchanged dismissal settings.
+- Set/rename/clear a label; rotate or switch theme during editing and confirm the draft survives.
+- Duplicate a repeating two-code alarm with verification/custom sound; verify the new alarm is
+  disabled and both retain their settings. Delete one and verify the other still works.
+- Enable, disable, edit and delete alarms; check Next alarm updates and no stale fired time is
+  displayed. Check local Today/Tomorrow dates, 12/24-hour format and clock/time-zone changes.
+- Enable a repeat and compare its toast to Next alarm. Deny exact-alarm access and confirm an
+  error appears without a success message. Rapidly toggle to check messages do not stack.
+- Check labelled ringing and verification notifications, including after editing the definition
+  during an active occurrence. Confirm ordinary dismissal and follow-ups still work.
+
+Validation for 0.9.0: all **178 JVM unit tests**, debug assembly, lint (warnings only) and
+scanner packaging checks pass. Isolated emulator checks covered trimmed label editing,
+independent disabled duplicates, enablement/countdown refresh, automatic countdown expiry,
+permission-denied scheduling, and snapshot labels on ringing/maths/verification screens and
+notifications. Physical GrapheneOS presentation checks remain in the checklist above.

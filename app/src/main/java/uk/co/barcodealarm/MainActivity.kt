@@ -4,7 +4,10 @@ import android.Manifest
 import android.app.AlarmManager
 import android.app.AlertDialog
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Typeface
@@ -12,7 +15,12 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.text.Editable
+import android.text.InputFilter
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -25,10 +33,12 @@ import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.TimePicker
+import androidx.core.content.ContextCompat
 import com.google.zxing.integration.android.IntentIntegrator
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -50,6 +60,20 @@ class MainActivity : BaseActivity() {
     private var alarmDraft: Alarm? = null
     private var timePicker: TimePicker? = null
     private var discardDialog: AlertDialog? = null
+
+    private val homeHandler = Handler(Looper.getMainLooper())
+    private var isScreenVisible = false
+    private var nextAlarmDescription: TextView? = null
+    private var nextAlarmCountdown: TextView? = null
+    private val homeCountdownUpdate = Runnable { refreshNextAlarm() }
+    private val timeChangeReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                // Let the existing restoration receiver update scheduled timestamps first.
+                homeHandler.removeCallbacks(homeCountdownUpdate)
+                homeHandler.postDelayed(homeCountdownUpdate, 250)
+            }
+        }
 
     // A scan is not saved until the user supplies a valid library name.
     private var scannedBarcodeValue: String? = null
@@ -82,6 +106,7 @@ class MainActivity : BaseActivity() {
             val savedAlarm = store.getAlarm(editingAlarmId) ?: Alarm(editingAlarmId, 7, 0, "", "")
             alarmDraft =
                 savedAlarm.copy(
+                    label = state.getString("label", savedAlarm.label),
                     hour = state.getInt("hour"),
                     minute = state.getInt("minute"),
                     barcodeValue = state.getString("code", ""),
@@ -117,6 +142,7 @@ class MainActivity : BaseActivity() {
         val draft = alarmDraft
         if (draft != null) {
             outState.putInt("editing", draft.id)
+            outState.putString("label", draft.label)
             outState.putInt("hour", timePicker?.hour ?: draft.hour)
             outState.putInt("minute", timePicker?.minute ?: draft.minute)
             outState.putString("code", draft.barcodeValue)
@@ -140,6 +166,16 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        isScreenVisible = true
+        ContextCompat.registerReceiver(
+            this,
+            timeChangeReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            },
+            ContextCompat.RECEIVER_EXPORTED,
+        )
         if (OccurrenceStore(this).all().any { it.audible })
             startForegroundService(Intent(this, RingService::class.java))
         // Refresh permission status after returning from Android Settings, without replacing a
@@ -149,6 +185,13 @@ class MainActivity : BaseActivity() {
             Page.HOME -> showHomePage()
             else -> Unit
         }
+    }
+
+    override fun onPause() {
+        isScreenVisible = false
+        homeHandler.removeCallbacks(homeCountdownUpdate)
+        unregisterReceiver(timeChangeReceiver)
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -161,6 +204,7 @@ class MainActivity : BaseActivity() {
         showPage("Your alarms", "A deliberate start to your day.")
         timePicker = null
         addSchedulingWarnings()
+        addNextAlarmCard()
         for (occurrence in OccurrenceStore(this).all()) {
             if (occurrence.active || occurrence.stage == OccurrenceStage.VERIFY_RESPONSE) {
                 addButton(if (occurrence.active) "Open active alarm" else "Are you still awake?") {
@@ -181,10 +225,55 @@ class MainActivity : BaseActivity() {
         for (alarm in alarms) {
             addAlarmCard(alarm)
         }
-        addButton("＋  Add alarm", primary = true) { createAlarmDraft() }
+        addButton("＋  Add alarm", primary = true) { runUiAction { createAlarmDraft() } }
         addButton("Barcodes") { showBarcodeLibrary() }
         addButton("Test alarm") { showTestAlarmConfirmation() }
         addButton("Settings & diagnostics") { showSettingsPage() }
+    }
+
+    private fun addNextAlarmCard() {
+        addCard {
+            addCaption("NEXT ALARM")
+            nextAlarmDescription = addCaption("")
+            nextAlarmCountdown = addText("", 22f)
+        }
+        refreshNextAlarm()
+    }
+
+    private fun refreshNextAlarm() {
+        homeHandler.removeCallbacks(homeCountdownUpdate)
+        if (currentPage != Page.HOME) return
+        val now = ZonedDateTime.now()
+        val nowMillis = now.toInstant().toEpochMilli()
+        val alarms = store.getAlarms()
+        val next = AlarmOverview.nextScheduled(alarms, nowMillis)
+        nextAlarmDescription?.text =
+            next
+                ?.let {
+                    AlarmOverview.scheduledDescription(
+                        it,
+                        now,
+                        android.text.format.DateFormat.is24HourFormat(this),
+                    )
+                }
+                .orEmpty()
+        nextAlarmDescription?.visibility = if (next == null) View.GONE else View.VISIBLE
+        nextAlarmCountdown?.text = AlarmOverview.countdown(alarms, nowMillis)
+        // UI-only refresh. Wake exactly at a displayed deadline so a fired time disappears;
+        // there is no countdown service and this callback is removed when the screen pauses.
+        if (isScreenVisible) {
+            val delay =
+                next?.let { (it.scheduledAtMillis - nowMillis).coerceIn(1, 60_000) } ?: 60_000L
+            homeHandler.postDelayed(homeCountdownUpdate, delay)
+        }
+    }
+
+    private fun enableAlarmWithConfirmation(alarm: Alarm) {
+        // enable returns only after persistence and AlarmManager registration both succeeded.
+        val scheduled = AlarmScheduler(this).enable(alarm)
+        AlarmOverview.enableConfirmation(scheduled, System.currentTimeMillis())?.let {
+            showMessage(it, short = true)
+        }
     }
 
     private fun addSchedulingWarnings() {
@@ -215,6 +304,7 @@ class MainActivity : BaseActivity() {
                     else -> "SCHEDULED • ONE TIME"
                 }
             addCaption(status)
+            addText(AlarmOverview.displayLabel(alarm), 22f)
             val timeRow = LinearLayout(this)
             timeRow.gravity = Gravity.CENTER_VERTICAL
             val clock = TextView(this)
@@ -250,6 +340,13 @@ class MainActivity : BaseActivity() {
                 }
                 addButton("Delete", danger = true) { runUiAction { deleteAlarm(alarm) } }
             }
+            addButton("Duplicate") {
+                runUiAction {
+                    store.saveAlarm(AlarmOverview.duplicate(alarm, store.nextAlarmId()))
+                    showHomePage()
+                    showMessage("Alarm duplicated", short = true)
+                }
+            }
         }
     }
 
@@ -269,7 +366,7 @@ class MainActivity : BaseActivity() {
         toggle.setOnCheckedChangeListener { _, isChecked ->
             runUiAction {
                 val scheduler = AlarmScheduler(this)
-                if (isChecked) scheduler.enable(alarm) else scheduler.disable(alarm)
+                if (isChecked) enableAlarmWithConfirmation(alarm) else scheduler.disable(alarm)
             }
             showHomePage()
         }
@@ -285,7 +382,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun createAlarmDraft() {
-        val nextId = (store.getAlarms().maxOfOrNull { alarm -> alarm.id } ?: 0) + 1
+        val nextId = store.nextAlarmId()
         alarmDraft = Alarm(id = nextId, hour = 7, minute = 0, barcodeValue = "", barcodeFormat = "")
         showAlarmEditor()
     }
@@ -331,6 +428,7 @@ class MainActivity : BaseActivity() {
         currentPage = Page.EDITOR
         showPage("Set your alarm", "Your chosen time. Your chosen days.")
         setBackAction { navigateBack() }
+        addAlarmLabelInput(draft)
         addCaption("WAKE-UP TIME")
         val picker = TimePicker(this)
         picker.setIs24HourView(true)
@@ -352,6 +450,41 @@ class MainActivity : BaseActivity() {
         addSpace(12)
         addButton("Save alarm", primary = true) { runUiAction { saveAlarmDraft() } }
         addButton("Cancel") { navigateBack() }
+    }
+
+    private fun addAlarmLabelInput(draft: Alarm) {
+        addCaption("Alarm label")
+        val input = EditText(this)
+        input.setSingleLine(true)
+        input.hint = "Alarm"
+        input.contentDescription = "Alarm label"
+        input.setTextColor(textColor)
+        input.setHintTextColor(secondaryTextColor)
+        input.filters = arrayOf(InputFilter.LengthFilter(AlarmOverview.MAX_LABEL_LENGTH))
+        input.setText(draft.label)
+        input.addTextChangedListener(
+            object : TextWatcher {
+                override fun beforeTextChanged(
+                    text: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int,
+                ) {}
+
+                override fun onTextChanged(
+                    text: CharSequence?,
+                    start: Int,
+                    before: Int,
+                    count: Int,
+                ) {
+                    alarmDraft = alarmDraft?.copy(label = text?.toString().orEmpty())
+                }
+
+                override fun afterTextChanged(text: Editable?) {}
+            }
+        )
+        contentLayout.addView(input)
+        addSpace(12)
     }
 
     private fun addRepeatDaySelector(draft: Alarm) {
@@ -546,7 +679,8 @@ class MainActivity : BaseActivity() {
 
     private fun saveAlarmDraft() {
         captureEditorTime()
-        val draft = checkNotNull(alarmDraft)
+        val draft =
+            checkNotNull(alarmDraft).let { it.copy(label = AlarmOverview.cleanLabel(it.label)) }
         require(draft.scanIntervalMinutes in 0..30) { "Scan interval must be 0–30 minutes" }
         require(draft.verificationDelayMinutes in 1..60) {
             "Verification delay must be 1–60 minutes"
@@ -563,7 +697,7 @@ class MainActivity : BaseActivity() {
             )
         check(store.getAlarm(updatedAlarm.id)?.isRinging != true) { "Cannot edit a ringing alarm" }
         if (updatedAlarm.isEnabled) {
-            AlarmScheduler(this).enable(updatedAlarm)
+            enableAlarmWithConfirmation(updatedAlarm)
         } else {
             store.saveAlarm(updatedAlarm)
         }

@@ -42,4 +42,5 @@ data class Alarm(
     val occurrenceScheduledAtMillis: Long = 0,
     // Separate from the maths timer. Persisted so process recreation cannot restart the ramp.
     val playbackStartedAtElapsedMillis: Long = -1,
+    val label: String = "",
 )

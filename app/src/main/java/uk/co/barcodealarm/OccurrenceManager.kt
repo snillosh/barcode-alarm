@@ -66,8 +66,9 @@ class OccurrenceManager(private val context: Context) {
                 .setContentTitle(title)
                 .setContentText(
                     if (occurrence.stage == OccurrenceStage.SECOND_READY)
-                        "Scan your second barcode to finish"
-                    else "Confirm before the response deadline"
+                        "${AlarmOverview.displayLabel(occurrence.snapshot)} · Scan your second barcode to finish"
+                    else
+                        "${AlarmOverview.displayLabel(occurrence.snapshot)} · Confirm before the response deadline"
                 )
                 .setContentIntent(open(occurrence))
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
