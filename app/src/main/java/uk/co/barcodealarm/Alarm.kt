@@ -1,5 +1,7 @@
 package uk.co.barcodealarm
 
+import java.time.DayOfWeek
+
 /**
  * An immutable saved alarm, similar to a C# record with init-only properties.
  *
@@ -23,4 +25,12 @@ data class Alarm(
     val correctAnswerCount: Int = 0,
     // Zero means no library selection; persisted alarms normally have a positive ID.
     val barcodeId: Int = 0,
+    // Empty means one-shot. Java uses ISO weekday numbers: Monday=1 through Sunday=7.
+    val repeatDays: Set<DayOfWeek> = emptySet(),
+    // True only while a snooze delivery is pending, rather than a regular scheduled day.
+    val isSnoozed: Boolean = false,
+    // Retain the original occurrence through snoozes, including changes to the wall clock.
+    val occurrenceScheduledAtMillis: Long = 0,
+    // Separate from the maths timer. Persisted so process recreation cannot restart the ramp.
+    val playbackStartedAtElapsedMillis: Long = -1,
 )

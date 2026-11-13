@@ -3,37 +3,47 @@ package uk.co.barcodealarm
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
+import java.time.ZonedDateTime
 
-/** Restores still-future occurrences after boot, clock changes, or a package update. */
+/** Restore pending deliveries; repeating alarms follow local weekdays after clock/zone changes. */
 class RestoreReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val store = AlarmStore(context)
-        val isDeviceBoot = intent.action == Intent.ACTION_BOOT_COMPLETED
         val scheduler = AlarmScheduler(context)
-
+        val now = ZonedDateTime.now()
+        val bootCount =
+            Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+        val isDeviceBoot =
+            intent.action == Intent.ACTION_BOOT_COMPLETED &&
+                AlarmRules.isNewDeviceBoot(store.getLastRestoredBootCount(), bootCount)
+        val isClockChange =
+            intent.action == Intent.ACTION_TIME_CHANGED ||
+                intent.action == Intent.ACTION_TIMEZONE_CHANGED
         for (alarm in store.getAlarms()) {
-            if (alarm.isRinging && isDeviceBoot) {
-                // elapsedRealtime starts over at boot, so old maths timing is no longer valid.
-                store.saveAlarm(
-                    alarm.copy(mathsStartedAtElapsedMillis = -1, correctAnswerCount = 0)
+            val restored =
+                AlarmRules.restoreAfterSystemChange(
+                    alarm,
+                    now,
+                    isClockChange = isClockChange,
+                    isDeviceBoot = isDeviceBoot,
+                )
+            if (restored != alarm) {
+                store.saveAlarm(restored)
+                store.log(
+                    "Restored ${alarm.id}: enabled=${restored.isEnabled}, due=${restored.scheduledAtMillis}"
                 )
             }
-            if (!alarm.isEnabled) {
-                continue
-            }
-            if (alarm.scheduledAtMillis <= System.currentTimeMillis()) {
-                store.saveAlarm(alarm.copy(isEnabled = false, scheduledAtMillis = 0))
-                store.log("Missed ${alarm.id}; re-enable manually")
-                continue
-            }
+            if (!restored.isEnabled || restored.isRinging) continue
             try {
-                // Retain the saved timestamp; do not silently move the alarm to tomorrow.
-                scheduler.schedule(alarm)
+                scheduler.schedule(restored)
             } catch (exception: Exception) {
-                store.saveAlarm(alarm.copy(isEnabled = false, scheduledAtMillis = 0))
+                store.saveAlarm(AlarmRules.markDismissed(restored))
                 store.log("Restore failed: $exception")
             }
         }
-        // Android restricts boot-time media services. Unresolved ringing resumes on app open.
+        // Record only after restoration completed, so an interrupted restoration can retry.
+        if (isDeviceBoot && bootCount >= 0) store.recordRestoredBoot(bootCount)
+        // No boot-time media service: an unresolved ringing alarm resumes on app open.
     }
 }

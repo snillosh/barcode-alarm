@@ -1,6 +1,6 @@
 # Barcode Alarm
 
-Minimal offline Kotlin Android alarm for Pixel 7 Pro / GrapheneOS. Native widgets, AlarmManager.setAlarmClock, offline ZXing, local preferences. No accounts, analytics, Internet permission or Google Play Services. Original requirements: [BRIEF.md](BRIEF.md).
+Minimal offline Kotlin Android alarm for Pixel 7 Pro / GrapheneOS, with one-shot or selected-day repeats and five-minute snooze. Native widgets, AlarmManager.setAlarmClock, offline ZXing, local preferences. No accounts, analytics, Internet permission or Google Play Services. Original requirements: [BRIEF.md](BRIEF.md).
 
 ## Build and install
 
@@ -16,16 +16,15 @@ If required, set `sdk.dir=/path/to/Android/Sdk` in an untracked `local.propertie
 ## First use
 
 1. Open Settings and diagnostics. Grant exact alarm access, notifications and full-screen intent access. Grant camera permission when scanning. Open app battery settings and select unrestricted background use manually.
-2. Add an alarm, choose a time, register a barcode and optionally choose a system alarm sound. Save, then enable its switch.
-3. Test Alarm schedules the first saved alarm ten seconds ahead, replacing any existing occurrence. It requires the real barcode or the full maths challenge to stop.
+2. Add named codes in Barcodes. Add an alarm, choose a time, select its library barcode and optionally choose a system alarm sound. Select any Mon–Sun repeat days, or leave them all off for a one-shot alarm. Save, then enable its switch.
+3. Test Alarm schedules the first saved alarm ten seconds ahead, replacing any existing occurrence (including a pending snooze). Snooze temporarily silences it; final dismissal still requires the barcode or full maths challenge.
 
-Enabled alarms fire once. Successful dismissal keeps the definition and barcode but disables the alarm. Enabling schedules the next local occurrence; a DST gap moves to the next valid time and an overlap uses the earlier offset. After scheduling, the absolute intended timestamp is preserved across time-zone changes and reboot, rather than silently moving the alarm. A pending occurrence whose timestamp passed during restart is disabled and logged. Re-enable it manually.
-
-Ringing consumes the pending occurrence before starting a media-playback foreground service. Duplicate/stale receiver deliveries are ignored by matching the persisted occurrence timestamp. Simultaneous alarms are handled in saved order; each requires its own dismissal. Settings cannot edit or disable a ringing alarm. Maths progress uses elapsed realtime and synchronous local persistence; leaving the screen restores full app playback volume. A reboot resets maths progress for an unresolved ringing alarm because the monotonic clock has restarted.
+Each registered delivery fires once. One-shot alarms disable after successful dismissal. Repeating alarms stay enabled and register the next selected day after successful dismissal. Both retain their definition and barcode. Disabling an alarm cancels its pending delivery, including snoozes. A DST gap moves to the next valid time and an overlap uses the earlier offset once. Future one-shot timestamps are preserved across reboot/zone changes; regular repeats follow local calendar time and selected days. Missed one-shots are disabled and logged; missed repeats advance to the next future selected day.
+Ringing consumes the pending occurrence before starting a media-playback foreground service. Duplicate/stale receiver deliveries are ignored by matching the persisted occurrence timestamp. Simultaneous alarms are handled in saved order; each requires its own dismissal. Settings cannot edit or disable a ringing alarm. Maths progress uses elapsed realtime and synchronous local persistence; leaving the screen restores full app playback volume. Snooze retains maths progress and its elapsed timer, as backgrounding already does. A reboot resets maths progress for ringing or snoozed alarms because the monotonic clock has restarted.
 
 ## Physical device verification required
 
-This app has **not been tested on GrapheneOS**. Verify each case on the Pixel before relying on it:
+The user reported earlier releases working on GrapheneOS. **The new snooze/repeat release has not been tested on the physical phone.** Verify these cases on the Pixel:
 
 - Run the ten-second test unlocked, locked, then idle (also test an alarm several hours ahead).
 - With an alarm scheduled, background the app and run `adb shell am kill uk.co.barcodealarm`; verify delivery. This is different from force-stop, which blocks delivery until the app is launched again.
@@ -33,6 +32,9 @@ This app has **not been tested on GrapheneOS**. Verify each case on the Pixel be
 - Scan an incorrect code, correct code, EAN-13 / UPC-A equivalents, UPC-E, Code 128 and QR. Deny camera access and verify maths remains available.
 - Answer 15 questions before five minutes: it must keep ringing. Wait five minutes with fewer than 15: it must keep ringing. Rotate, background, return and switch to scanning: progress must survive. Verify app playback is quieter only while maths is visible, with system alarm volume unchanged.
 - Disable, edit, delete and re-enable alarms; verify Android's next-alarm indicator. Schedule overlapping alarms and dismiss each.
+- Select weekdays, weekend-only and mixed repeat days. Dismiss by barcode and maths and verify the next selected day stays enabled. Leave every day off to verify one-shot behaviour.
+- Snooze for five minutes, background/terminate the app normally, and verify it rings again. Check that Snooze is temporary and final dismissal still requires barcode/maths. Disable a pending snooze and confirm it does not ring.
+- Reboot during a pending snooze and before a future repeat; unlock once, verify restoration. After an interrupted repeating occurrence, verify a future selected day is scheduled. Check local-time repeats after changing time zone.
 - Deny/revoke exact alarm, notification and full-screen access, then inspect Settings and scheduling errors. Android can remove scheduled alarms when exact access is revoked; reopen and re-enable affected alarms after granting access.
 - Select a system sound and then make it unavailable; verify fallback and inspect the local diagnostic log. Check alarm volume, DND policy and vibration on the actual device.
 - Kill the ringing process normally: verify foreground service recreation, audio and persisted dismissal progress. Verify low-memory and battery behavior.
@@ -41,7 +43,7 @@ This app has **not been tested on GrapheneOS**. Verify each case on the Pixel be
 
 No pre-unlock boot support: storage is credential encrypted. No app can guarantee delivery when powered off, force-stopped or blocked by the OS. Full-screen presentation depends on Android/GrapheneOS permissions, lock state and notification policy; the ongoing notification opens the ringing screen. Normal navigation and device controls remain available.
 
-A reboot does not launch a playback foreground service (Android restricts media playback services from boot receivers). An unresolved ringing alarm resumes when you open the app. Future enabled alarms are restored after unlock. Notifications denied or a muted alarm stream can prevent useful alarm presentation/audio; review Settings before use. No DND bypass or battery-management bypass is requested.
+A reboot does not launch a playback foreground service (Android restricts media playback services from boot receivers). An unresolved one-shot ringing alarm resumes when you open the app. An interrupted repeating occurrence advances to the next selected day after reboot so it cannot block the series indefinitely. Future enabled alarms are restored after unlock. Notifications denied or a muted alarm stream can prevent useful alarm presentation/audio; review Settings before use. No DND bypass or battery-management bypass is requested.
 
 The bounded local diagnostic log records scheduling, firing, dismissal, missed occurrences and caught playback errors. It contains no barcode values. Android's own storage/OS failures can still prevent delivery or persistence.
 
@@ -56,7 +58,7 @@ Unit tests cover scheduling, DST gap handling, dismissal state, barcode comparis
 
 ## Validation in this workspace
 
-Debug APK assembly, all **16 JVM unit tests**, and Android lint completed successfully using Android Studio's bundled JDK. Lint has warnings (including SDK updates, deliberate synchronous persistence, and the service-lifetime alarm wake lock); no lint errors. API 36 is the current project baseline; test newer OS compatibility before raising the target SDK. The system `/usr/bin/java` here is a runtime without `javac`; select Android Studio's bundled JDK when building.
+Debug APK assembly, all **116 JVM unit tests**, and Android lint completed successfully using Android Studio's bundled JDK. Lint has warnings (including SDK updates, deliberate synchronous persistence, and the service-lifetime alarm wake lock); no lint errors. API 36 is the current project baseline; test newer OS compatibility before raising the target SDK. The system `/usr/bin/java` here is a runtime without `javac`; select Android Studio's bundled JDK when building.
 
 ```sh
 export JAVA_HOME="$HOME/.local/share/JetBrains/Toolbox/apps/android-studio/jbr"
@@ -130,3 +132,96 @@ restart, draft protection, rotation, system/gesture Back, and maths progress aft
 from the challenge. A real `setAlarmClock()` occurrence fired while the app was backgrounded,
 started the foreground playback service and consumed the saved one-shot occurrence.
 These are emulator checks; the readability refactor has not been tested on the physical phone.
+
+
+## Snooze and repeat days (0.6.0)
+
+The ringing screen has **Snooze · 5 minutes**, available immediately. The current occurrence
+is registered five minutes ahead using `setAlarmClock()` before playback stops. A failed
+registration keeps it ringing and displays the error. Snooze does not change the configured
+time, barcode or repeat-day selection. It may cross midnight onto an unselected day because
+it retries the current occurrence. Final dismissal still requires the barcode or maths.
+Existing maths progress is retained; its five-minute timer continues during snooze. After
+reboot, monotonic maths progress resets while a still-future snooze delivery is restored.
+Snoozes use a saved wall-clock alarm timestamp; manually changing the device date/time can
+affect RTC delivery. If multiple alarms are ringing, each must be snoozed/dismissed separately.
+
+The editor offers all **Mon–Sun** checkboxes. No selection means one-shot; any selection
+means repeat on those days at the configured local time. The home screen shows the selected
+days and the next pending time. Repeat-day changes participate in unsaved-draft protection
+and survive editor/library navigation and activity recreation. Editing and saving an enabled
+snoozed alarm replaces its snooze with the newly configured regular schedule.
+
+Repeats use separate exact `setAlarmClock()` occurrences, not Android's inexact repeating
+API. Only one pending delivery exists per alarm: while it is ringing there is no second
+registration; successful dismissal registers the next future selected day. A pending snooze
+occupies that same slot. Disabled series never re-enable themselves after restart. Regular
+repeats are recalculated for local time-zone/clock changes; future snoozes retain their
+explicit timestamp. Missed repeats advance rather than replaying missed alarms immediately.
+Interrupted repeating playback after reboot also advances to a future selected day, without
+starting a prohibited boot-time media service. See [Android scheduling guidance](https://developer.android.com/develop/background-work/services/alarms).
+
+Existing alarms upgrade as one-shot alarms; new JSON fields have compatible defaults. There
+are no new runtime dependencies or permissions. The JSON compatibility tests use a test-only
+`org.json` implementation because Android's JVM test stubs cannot perform real JSON parsing.
+
+Validation for 0.6.0: all **94 unit tests** pass, including 43 new repeat/snooze, restoration
+and JSON compatibility tests. Debug APK assembly, lint (warnings only) and scanner packaging
+checks pass. The isolated emulator selected Mon/Sat/Sun, protected unsaved repeat edits and
+retained them through library navigation. A real five-minute snooze silenced playback,
+preserved maths progress, survived termination of the app process without force-stop,
+and restarted the foreground service on time. Authorised maths dismissal registered the
+next selected day at 07:00; disabling it cleared the pending occurrence. With exact-alarm
+access denied, Snooze rolled back to the ringing state and kept the playback service running.
+The new behaviour still needs the physical-device checks above.
+
+## Gradual volume increase (0.7.0)
+
+Open **Settings → Alarm playback → Gradual volume increase**. It is off by default so existing
+alarms keep their immediate full-level playback. When enabled, sound starts at **20% app-player
+gain** and rises linearly to 100% over **30 seconds, 1 minute, 2 minutes or 5 minutes** (default
+1 minute). Gain is not perceived loudness; try your chosen tone and system alarm level on the
+phone. This changes only the app's player, never the system alarm-volume setting or vibration.
+
+The initial gain is set before audio starts, avoiding a full-volume first frame. The ramp's
+monotonic start time is saved per ringing occurrence, so rotation, backgrounding and service/
+process recreation do not restart it. The ramp starts once a sound is ready, including fallback
+tones. Snooze and each new occurrence start a fresh ramp; a reboot resets its monotonic clock.
+While maths is visible, playback is 20% of the current ramp level. Returning to the ringing
+screen restores that level, and the ramp continues to full gain normally.
+
+Playback options are stored separately from alarm definitions. Older saved alarms default to
+an uninitialised playback clock, so upgrading retains all alarms, codes, repeat days and snoozes.
+No application dependency or permission was added.
+
+Validation for 0.7.0: all **116 unit tests**, APK assembly, lint (warnings only), and scanner
+packaging checks pass. The isolated emulator saved the enabled/30-second preference, retained
+the ramp clock after process/service recreation, and left the system alarm-volume preference
+unchanged. Android's mixer showed the player increasing from approximately -12 dB early in
+the ramp to 0 dB at full gain, then -14 dB during maths (20% gain). Snooze clears the playback
+clock for its next ring. Perceived loudness with your chosen tone still needs a phone check.
+
+The restart test also exposed repeated `BOOT_COMPLETED` delivery without an actual device
+reboot. Restoration now uses Android's boot counter to reset monotonic clocks once per real
+boot, preserving ramp/maths progress and active repeating alarms on ordinary process restart.
+If the platform does not expose a boot counter, the existing conservative boot-reset behaviour
+is retained. No new permission is requested.
+
+## App icon (0.7.1)
+
+The launcher now uses an original vector alarm-clock mark with a barcode face: cream and
+mint on the app's deep green background. Adaptive foreground/background layers support
+launcher masks, and Android 13+ resources include a monochrome layer for launchers with
+wallpaper-themed icons. A tighter white silhouette is used for the ringing notification.
+There are no runtime image libraries or new permissions.
+
+Editable SVG reference and rendered previews live in [artwork](artwork/). The Android vector
+resources are in `res/drawable`, with adaptive definitions in `res/mipmap-anydpi-v26` and
+`res/mipmap-anydpi-v33`; the manifest sets both icon and roundIcon. SVG edits are not compiled
+automatically: keep the corresponding Android vector paths in sync. The mark stays within
+the adaptive safe region; see [Android adaptive-icon guidance](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive).
+
+Validation for 0.7.1: APK assembly, all **116 unit tests**, lint (warnings only), and scanner
+packaging checks pass. The icon was rendered under circular/rounded-square and sample themed
+masks, then installed and visually checked in the Android emulator's launcher. This update
+changes icon resources and the notification glyph; alarm behaviour is unchanged.

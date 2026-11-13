@@ -41,6 +41,7 @@ object Navigation {
         return draft.hour != original.hour ||
             draft.minute != original.minute ||
             draft.barcodeId != original.barcodeId ||
+            draft.repeatDays != original.repeatDays ||
             draft.soundUri != original.soundUri
     }
 

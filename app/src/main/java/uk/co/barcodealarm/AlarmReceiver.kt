@@ -16,9 +16,9 @@ class AlarmReceiver : BroadcastReceiver() {
             return
         }
 
-        // Consume the one-shot occurrence before starting playback. Duplicate deliveries
-        // will see isEnabled=false and cannot start the same occurrence again.
-        store.saveAlarm(alarm.copy(isEnabled = false, scheduledAtMillis = 0, isRinging = true))
+        // Consume this delivery before playback. A repeat series stays enabled, while
+        // isRinging rejects duplicate deliveries until dismissal schedules its next day.
+        store.saveAlarm(AlarmRules.markTriggered(alarm))
         store.log("Triggered ${alarm.id}")
         try {
             context.startForegroundService(Intent(context, RingService::class.java))

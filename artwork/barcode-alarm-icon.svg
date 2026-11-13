@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="18 18 72 72">
+<title>Barcode Alarm — alarm clock with barcode face</title>
+<rect x="18" y="18" width="72" height="72" rx="18" fill="#245B45"/>
+<path d="M54,32 A21,21 0,1 1,54,74 A21,21 0,1 1,54,32 Z" fill="none" stroke="#F5F7F2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M31,36 Q31,28 39,28 M69,28 Q77,28 77,36" fill="none" stroke="#F5F7F2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54,25 L54,28 M42,73 L38,79 M66,73 L70,79" fill="none" stroke="#F5F7F2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M54,42 L54,52 L62,52" fill="none" stroke="#A4D5B5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M43,58 H45 V65 H43 Z" fill="#F5F7F2"/>
+<path d="M47,58 H48 V65 H47 Z" fill="#F5F7F2"/>
+<path d="M50,58 H53 V65 H50 Z" fill="#F5F7F2"/>
+<path d="M55,58 H56 V65 H55 Z" fill="#F5F7F2"/>
+<path d="M58,58 H60 V65 H58 Z" fill="#F5F7F2"/>
+<path d="M62,58 H65 V65 H62 Z" fill="#F5F7F2"/>
+</svg>

@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -25,6 +26,10 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.TimePicker
 import com.google.zxing.integration.android.IntentIntegrator
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -79,6 +84,12 @@ class MainActivity : BaseActivity() {
                     barcodeFormat = state.getString("format", ""),
                     soundUri = state.getString("sound", ""),
                     barcodeId = state.getInt("barcodeId"),
+                    repeatDays =
+                        state
+                            .getIntArray("repeatDays")
+                            ?.filter { value -> value in 1..7 }
+                            ?.map(DayOfWeek::of)
+                            ?.toSet() ?: savedAlarm.repeatDays,
                 )
         }
         currentPage = Navigation.restorePage(state?.getString("page"), alarmDraft != null)
@@ -101,6 +112,10 @@ class MainActivity : BaseActivity() {
             outState.putString("format", draft.barcodeFormat)
             outState.putString("sound", draft.soundUri)
             outState.putInt("barcodeId", draft.barcodeId)
+            outState.putIntArray(
+                "repeatDays",
+                draft.repeatDays.map { day -> day.value }.toIntArray(),
+            )
         }
         super.onSaveInstanceState(outState)
     }
@@ -154,7 +169,10 @@ class MainActivity : BaseActivity() {
                 !getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
         ) {
             for (alarm in store.getAlarms().filter { savedAlarm -> savedAlarm.isEnabled }) {
-                store.saveAlarm(alarm.copy(isEnabled = false, scheduledAtMillis = 0))
+                if (!alarm.isRinging) AlarmScheduler(this).cancel(alarm)
+                store.saveAlarm(
+                    alarm.copy(isEnabled = false, scheduledAtMillis = 0, isSnoozed = false)
+                )
             }
             addText("Exact alarm access is missing. Allow it in Settings, then enable your alarms.")
         }
@@ -165,7 +183,14 @@ class MainActivity : BaseActivity() {
 
     private fun addAlarmCard(alarm: Alarm) {
         addCard {
-            addCaption(if (alarm.isEnabled) "SCHEDULED • ONE TIME" else "READY WHEN YOU ARE")
+            val status =
+                when {
+                    alarm.isSnoozed -> "SNOOZED"
+                    !alarm.isEnabled -> "READY WHEN YOU ARE"
+                    alarm.repeatDays.isNotEmpty() -> "REPEATING"
+                    else -> "SCHEDULED • ONE TIME"
+                }
+            addCaption(status)
             val timeRow = LinearLayout(this)
             timeRow.gravity = Gravity.CENTER_VERTICAL
             val clock = TextView(this)
@@ -180,6 +205,14 @@ class MainActivity : BaseActivity() {
             val selectedBarcode =
                 store.getBarcodes().find { barcode -> barcode.id == alarm.barcodeId }
             addCaption(selectedBarcode?.name ?: "No barcode selected")
+            addCaption(RepeatDays.describe(alarm.repeatDays))
+            if (alarm.isEnabled && alarm.scheduledAtMillis > 0) {
+                val nextTime =
+                    Instant.ofEpochMilli(alarm.scheduledAtMillis)
+                        .atZone(ZoneId.systemDefault())
+                        .format(DateTimeFormatter.ofPattern("EEE HH:mm", Locale.ENGLISH))
+                addCaption(if (alarm.isSnoozed) "Snoozed until $nextTime" else "Next: $nextTime")
+            }
             addCaption(
                 if (alarm.isEnabled) "Enabled · scan to dismiss"
                 else "Disabled · enable for the next occurrence"
@@ -269,7 +302,7 @@ class MainActivity : BaseActivity() {
     private fun showAlarmEditor() {
         val draft = alarmDraft ?: return
         currentPage = Page.EDITOR
-        showPage("Set your alarm", "One time. Your chosen place to start.")
+        showPage("Set your alarm", "Your chosen time. Your chosen days.")
         setBackAction { navigateBack() }
         addCaption("WAKE-UP TIME")
         val picker = TimePicker(this)
@@ -279,6 +312,7 @@ class MainActivity : BaseActivity() {
         timePicker = picker
         contentLayout.addView(picker)
         addSpace(12)
+        addRepeatDaySelector(draft)
         addCaption("DISMISSAL BARCODE")
         addBarcodeDropdown(draft)
         addButton("Manage barcodes") {
@@ -289,6 +323,34 @@ class MainActivity : BaseActivity() {
         addSpace(12)
         addButton("Save alarm", primary = true) { runUiAction { saveAlarmDraft() } }
         addButton("Cancel") { navigateBack() }
+    }
+
+    private fun addRepeatDaySelector(draft: Alarm) {
+        addCaption("REPEAT")
+        val summary = addCaption(RepeatDays.describe(draft.repeatDays))
+        for (daysInRow in DayOfWeek.values().toList().chunked(4)) {
+            addButtonRow {
+                for (day in daysInRow) {
+                    val checkbox = CheckBox(this)
+                    checkbox.text = RepeatDays.shortName(day)
+                    checkbox.contentDescription =
+                        "Repeat on ${day.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)}"
+                    checkbox.setTextColor(textColor)
+                    checkbox.minimumHeight = toPixels(56)
+                    checkbox.isChecked = day in draft.repeatDays
+                    checkbox.setOnCheckedChangeListener { _, isChecked ->
+                        val current = alarmDraft ?: return@setOnCheckedChangeListener
+                        val updatedDays =
+                            if (isChecked) current.repeatDays + day else current.repeatDays - day
+                        alarmDraft = current.copy(repeatDays = updatedDays)
+                        summary.text = RepeatDays.describe(updatedDays)
+                    }
+                    contentLayout.addView(checkbox, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                }
+            }
+        }
+        addCaption("Leave all days off for a one-time alarm.")
+        addSpace(12)
     }
 
     private fun addBarcodeDropdown(draft: Alarm) {
@@ -524,6 +586,7 @@ class MainActivity : BaseActivity() {
         showPage("Settings", "A few essentials for dependable mornings.")
         setBackAction { navigateBack() }
         addAppearanceSettings()
+        addPlaybackSettings()
         addCaption("PERMISSIONS & ACCESS")
         addPermissionSettings()
         addCaption("BATTERY & DEVICE")
@@ -536,6 +599,65 @@ class MainActivity : BaseActivity() {
         addCaption("LOCAL DIAGNOSTICS")
         addCard { addText(store.getDiagnosticLog(), 12f).typeface = Typeface.MONOSPACE }
         addButton("Back to alarms") { navigateBack() }
+    }
+
+    private fun addPlaybackSettings() {
+        addCaption("ALARM PLAYBACK")
+        addCard {
+            val settingsStore = PlaybackSettingsStore(this)
+            var settings = settingsStore.read()
+            val toggle = Switch(this)
+            toggle.text = "Gradual volume increase"
+            toggle.textSize = 18f
+            toggle.setTextColor(textColor)
+            toggle.minimumHeight = toPixels(56)
+            toggle.isChecked = settings.gradualVolumeEnabled
+            contentLayout.addView(toggle)
+            addCaption(
+                "Start at 20% playback gain and gradually reach your normal alarm level. System alarm volume stays unchanged."
+            )
+            addCaption("Time to full volume")
+            val durations = PlaybackSettings.SUPPORTED_DURATIONS_SECONDS
+            val labels = listOf("30 seconds", "1 minute", "2 minutes", "5 minutes")
+            val dropdown = Spinner(this)
+            dropdown.contentDescription = "Gradual volume duration"
+            dropdown.minimumHeight = toPixels(56)
+            val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            dropdown.adapter = adapter
+            dropdown.setSelection(durations.indexOf(settings.rampDurationSeconds))
+            dropdown.isEnabled = settings.gradualVolumeEnabled
+            dropdown.onItemSelectedListener =
+                object : AdapterView.OnItemSelectedListener {
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+
+                    override fun onItemSelected(
+                        parent: AdapterView<*>?,
+                        view: View?,
+                        position: Int,
+                        id: Long,
+                    ) {
+                        val duration = durations[position]
+                        if (duration != settings.rampDurationSeconds)
+                            runUiAction {
+                                val updated = settings.copy(rampDurationSeconds = duration)
+                                settingsStore.save(updated)
+                                settings = updated
+                            }
+                        dropdown.setSelection(durations.indexOf(settings.rampDurationSeconds))
+                    }
+                }
+            contentLayout.addView(dropdown)
+            toggle.setOnCheckedChangeListener { _, isChecked ->
+                runUiAction {
+                    val updated = settings.copy(gradualVolumeEnabled = isChecked)
+                    settingsStore.save(updated)
+                    settings = updated
+                }
+                toggle.isChecked = settings.gradualVolumeEnabled
+                dropdown.isEnabled = settings.gradualVolumeEnabled
+            }
+        }
     }
 
     private fun addAppearanceSettings() {

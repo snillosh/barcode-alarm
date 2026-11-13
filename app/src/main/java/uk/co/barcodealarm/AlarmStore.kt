@@ -28,6 +28,18 @@ class AlarmStore(context: Context) {
         writeAlarms(otherAlarms + alarm)
     }
 
+    fun recordPlaybackStart(alarmId: Int, startedAtElapsedMillis: Long) {
+        // Keep the ringing queue's order: initialising playback must not move this alarm
+        // behind another simultaneously ringing alarm, unlike ordinary editor saves.
+        val alarms =
+            getAlarms().map { alarm ->
+                if (alarm.id == alarmId)
+                    alarm.copy(playbackStartedAtElapsedMillis = startedAtElapsedMillis)
+                else alarm
+            }
+        writeAlarms(alarms)
+    }
+
     fun deleteAlarm(id: Int) {
         writeAlarms(getAlarms().filterNot { alarm -> alarm.id == id })
     }
@@ -53,54 +65,12 @@ class AlarmStore(context: Context) {
     }
 
     private fun readAlarms(): List<Alarm> {
-        val jsonArray = JSONArray(preferences.getString("data", "[]"))
-        val alarms = mutableListOf<Alarm>()
-        for (index in 0 until jsonArray.length()) {
-            val json = jsonArray.getJSONObject(index)
-            alarms.add(
-                Alarm(
-                    id = json.getInt("id"),
-                    hour = json.getInt("hour"),
-                    minute = json.getInt("minute"),
-                    barcodeValue = json.getString("code"),
-                    barcodeFormat = json.getString("format"),
-                    soundUri = json.optString("sound"),
-                    isEnabled = json.optBoolean("enabled"),
-                    scheduledAtMillis = json.optLong("due"),
-                    isRinging = json.optBoolean("ringing"),
-                    mathsStartedAtElapsedMillis = json.optLong("started", -1),
-                    correctAnswerCount = json.optInt("correct"),
-                    barcodeId = json.optInt("barcodeId"),
-                )
-            )
-        }
-        return alarms
-    }
-
-    private fun encodeAlarms(alarms: List<Alarm>): String {
-        val jsonArray = JSONArray()
-        for (alarm in alarms) {
-            val json = JSONObject()
-            json.put("id", alarm.id)
-            json.put("hour", alarm.hour)
-            json.put("minute", alarm.minute)
-            json.put("code", alarm.barcodeValue)
-            json.put("format", alarm.barcodeFormat)
-            json.put("sound", alarm.soundUri)
-            json.put("enabled", alarm.isEnabled)
-            json.put("due", alarm.scheduledAtMillis)
-            json.put("ringing", alarm.isRinging)
-            json.put("started", alarm.mathsStartedAtElapsedMillis)
-            json.put("correct", alarm.correctAnswerCount)
-            json.put("barcodeId", alarm.barcodeId)
-            jsonArray.put(json)
-        }
-        return jsonArray.toString()
+        return AlarmJsonCodec.decode(preferences.getString("data", "[]").orEmpty())
     }
 
     private fun writeAlarms(alarms: List<Alarm>) {
         // commit() is deliberately synchronous: persist an occurrence before scheduling it.
-        val saved = preferences.edit().putString("data", encodeAlarms(alarms)).commit()
+        val saved = preferences.edit().putString("data", AlarmJsonCodec.encode(alarms)).commit()
         check(saved) { "Could not persist alarms" }
     }
 
@@ -149,11 +119,21 @@ class AlarmStore(context: Context) {
         val saved =
             preferences
                 .edit()
-                .putString("data", encodeAlarms(migration.alarms))
+                .putString("data", AlarmJsonCodec.encode(migration.alarms))
                 .putString("barcodes", encodeBarcodes(migration.barcodes))
                 .putBoolean("barcode_library_migrated", true)
                 .commit()
         check(saved) { "Could not migrate barcode library" }
+    }
+
+    fun getLastRestoredBootCount(): Int {
+        return preferences.getInt("last_restored_boot_count", -1)
+    }
+
+    fun recordRestoredBoot(bootCount: Int) {
+        check(preferences.edit().putInt("last_restored_boot_count", bootCount).commit()) {
+            "Could not save restored boot identity"
+        }
     }
 
     fun log(message: String) {

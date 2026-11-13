@@ -7,8 +7,8 @@ android {
         applicationId = "uk.co.barcodealarm"
         minSdk = 28
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.5.1"
+        versionCode = 10
+        versionName = "0.7.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -21,4 +21,7 @@ dependencies {
     implementation("androidx.core:core:1.13.1")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation("junit:junit:4.13.2")
+    // Android supplies org.json at runtime; JVM tests need a real implementation instead of SDK
+    // stubs.
+    testImplementation("org.json:json:20240303")
 }

@@ -15,6 +15,8 @@ Read these files in order. Production Kotlin lives in `app/src/main/java/uk/co/b
 | `AlarmRules.kt` | Time calculation, barcode matching, dismissal conditions | Pure business-rule helper |
 | `BarcodeLibrary.kt` | Library validation, selection and migration | Domain operations returning new records/lists |
 | `Navigation.kt` | Which page Back should return to and whether a draft changed | Small navigation decision service |
+| `AlarmJsonCodec.kt` | Compatible alarm JSON mapping and new-field defaults | Small explicit serializer |
+| `RepeatDays.kt` | Stable day ordering and human-readable labels | Calendar formatting helper |
 | `AlarmStore.kt` | Reads/writes local JSON; migrates old saved codes | Repository backed by a local settings store |
 | `AlarmScheduler.kt` | Creates/cancels Android alarm registrations | Adapter around an operating-system scheduler |
 | `AlarmReceiver.kt` | Receives a scheduled occurrence and starts playback | OS-invoked event handler |
@@ -96,12 +98,13 @@ That is why the app can ring without its ordinary screen or process already runn
 ### 3. Fire
 
 Android invokes `AlarmReceiver.onReceive()`. `AlarmRules.shouldTrigger()` rejects stale or
-duplicate deliveries. The receiver persists `isEnabled = false`, clears the scheduled
-occurrence, sets `isRinging = true`, and starts `RingService`.
+duplicate deliveries. The receiver clears the scheduled occurrence, sets `isRinging = true`, and starts
+`RingService`. One-shots become disabled; a repeating series retains `isEnabled = true`
+while ringing, with no pending timestamp. Duplicate deliveries are rejected by `isRinging`.
 
 The receiver is short-lived. The service owns the ongoing notification, sound and vibration.
 `RingActivity` owns the dismissal screen. Closing or rotating a screen must not own or stop
-the player. There is no automatic repeat registration.
+the player. A repeating alarm registers its next selected day after successful dismissal.
 
 ### 4. Dismiss
 
@@ -113,8 +116,31 @@ The alternative maths path stores its monotonic start time once and increments a
 correct-answer count. `AlarmRules.canDismissWithMaths()` requires both five minutes and 15
 correct answers. Returning to the ringing screen does not reset those values.
 
-`dismissAlarm()` saves a disabled, non-ringing record, stops the playback service and returns
-to normal UI. Another simultaneously ringing alarm is handled separately.
+`dismissAlarm()` delegates to `AlarmScheduler.dismiss()`. `AlarmRules.completeOccurrence()`
+clears a one-shot, or computes the next selected day for an enabled repeat. The scheduler
+registers that next delivery, rolling back its enabled flag if Android rejects it. Dismissal
+still stops the current occurrence and reports any future-scheduling failure. Another
+simultaneously ringing alarm is handled separately.
+
+### 5. Snooze and restore
+
+`AlarmRules.snooze()` changes a ringing alarm into an enabled pending snooze, preserving
+its definition, repeat days and maths progress. `AlarmScheduler.snooze()` saves that state
+then registers a five-minute `setAlarmClock()` delivery. On failure it restores the original
+ringing record. The Activity stops playback only after successful registration. On delivery,
+`markTriggered()` clears the pending snooze flag but retains the original occurrence time.
+
+`repeatDays` is a set of Java `DayOfWeek` values (ISO Monday=1 through Sunday=7, unlike the
+numeric order of C#'s `DayOfWeek`). The next-time calculation walks calendar dates, not fixed
+24-hour intervals. `occurrenceScheduledAtMillis` preserves the original occurrence across
+snoozes, preventing a clock rollback from re-registering that same occurrence on dismissal.
+
+`restoreAfterSystemChange()` is pure and unit tested. It preserves future one-shot/snooze
+instants, recalculates regular repeats on local clock/zone changes, advances missed repeats,
+and disables missed one-shots. At reboot it clears invalid monotonic challenge progress.
+An interrupted repeating alarm advances to its next selected day instead of leaving future
+repeats blocked behind an old ringing flag. No receiver starts playback at boot.
+
 
 ## Two clocks, two kinds of state
 
@@ -172,8 +198,10 @@ Dialogs, the keyboard, dropdowns and the scanner retain their platform Back hand
 python3 scripts/check_scanner_apk.py
 ```
 
-The three unit-test classes correspond to alarm rules, library rules and navigation. They
-exercise pure functions without an emulator. The packaging check verifies actual scanner
+The unit-test classes cover alarm rules, library rules, navigation, snooze/repeat state
+transitions, reboot/clock restoration and backward-compatible JSON mapping. They exercise
+pure functions without an emulator. JSON tests have a test-only real `org.json` dependency;
+the Android app continues to use the operating system's implementation. The packaging check verifies actual scanner
 class definitions in the APK, which ordinary JVM tests cannot inspect.
 
 Unit tests do not establish delivery reliability on GrapheneOS. After changes to lifecycle,
@@ -199,3 +227,37 @@ layers solely to make a file shorter. Do not mix behaviour changes into formatti
 
 The refactor was formatted with standalone ktfmt 0.54 using `--kotlinlang-style`.
 That tool is not an application dependency. Generated Gradle wrapper files are left alone.
+
+## Playback volume ramp
+
+`PlaybackSettings` is an immutable record of the global on/off choice and duration.
+`PlaybackSettingsStore` persists it in a separate `playback` preferences file. `PlaybackVolume`
+is a pure gain calculation using monotonic elapsed time; unit tests cover its bounds, duration,
+maths attenuation and invalid-value fallback. The implementation ramps player gain, not system
+stream volume or perceived loudness.
+
+`RingService` reads the settings when created. Once a sound is prepared, it records
+`playbackStartedAtElapsedMillis` through `AlarmStore.recordPlaybackStart()`, preserving the
+ringing queue's order. It sets gain before `MediaPlayer.start()` and updates it in the existing
+250 ms playback callback. The persisted clock survives process recreation; the alarm rules
+clear it for snooze/new occurrences and reboot. Maths applies a 0.2 multiplier to the current
+ramp rather than replacing the ramp's gain. No timer here schedules alarm delivery.
+
+Boot restoration now records the successfully restored `Settings.Global.BOOT_COUNT` in
+`AlarmStore`. Android may reissue `BOOT_COMPLETED` when the app is restored; the broadcast
+alone does not prove the device rebooted. `AlarmRules.isNewDeviceBoot()` checks the identity
+before clearing monotonic timers or advancing an interrupted repeat. Unknown boot identity
+keeps conservative reset behaviour. The boot marker is committed after the restoration loop
+so interrupted work can retry. Optional playback-clock write failure is logged to Android's
+system log and does not block sound playback; the current service retains its in-memory clock.
+
+## Icon resources
+
+`artwork/barcode-alarm-icon.svg` is the editable design reference; `icon-preview.svg/png`
+shows rounded-square, circular and sample themed masks. These are design assets, not an
+application dependency. `ic_launcher_foreground.xml` and `ic_launcher_monochrome.xml` contain
+the corresponding native Android vector paths. `mipmap-anydpi-v26/ic_launcher.xml` combines
+the foreground/background; its `v33` counterpart also supplies the monochrome layer.
+`ic_alarm_notification.xml` uses the same white geometry with tighter optical bounds for
+the small notification icon. If changing the design, update these paths together and inspect
+small-size and adaptive-mask renders. Generated build outputs remain excluded from Git.

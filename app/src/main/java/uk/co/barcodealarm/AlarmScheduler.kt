@@ -51,26 +51,54 @@ class AlarmScheduler(private val context: Context) {
     fun enable(
         alarm: Alarm,
         scheduledAtMillis: Long =
-            AlarmRules.calculateNextOccurrence(alarm.hour, alarm.minute, ZonedDateTime.now()),
+            AlarmRules.calculateNextOccurrence(
+                alarm.hour,
+                alarm.minute,
+                ZonedDateTime.now(),
+                alarm.repeatDays,
+            ),
     ) {
         check(!alarm.isRinging) { "Alarm is ringing" }
         cancel(alarm)
 
-        val enabledAlarm =
-            alarm.copy(
-                isEnabled = true,
-                scheduledAtMillis = scheduledAtMillis,
-                mathsStartedAtElapsedMillis = -1,
-                correctAnswerCount = 0,
-            )
+        val enabledAlarm = AlarmRules.prepareEnabled(alarm, scheduledAtMillis)
         store.saveAlarm(enabledAlarm)
         try {
             schedule(enabledAlarm)
         } catch (exception: Exception) {
             // Never leave the UI claiming an alarm is enabled when Android rejected it.
-            store.saveAlarm(enabledAlarm.copy(isEnabled = false, scheduledAtMillis = 0))
+            store.saveAlarm(AlarmRules.markDismissed(enabledAlarm))
             store.log("Schedule failed: $exception")
             throw exception
+        }
+    }
+
+    fun snooze(alarm: Alarm) {
+        val snoozed = AlarmRules.snooze(alarm, System.currentTimeMillis())
+        store.saveAlarm(snoozed)
+        try {
+            schedule(snoozed)
+            store.log("Snoozed ${alarm.id} until ${snoozed.scheduledAtMillis}")
+        } catch (exception: Exception) {
+            // Do not silence playback unless Android actually accepted the snooze.
+            store.saveAlarm(alarm)
+            store.log("Snooze failed: $exception")
+            throw exception
+        }
+    }
+
+    /** Returns false when dismissal succeeded but the next repeat could not be registered. */
+    fun dismiss(alarm: Alarm): Boolean {
+        val nextOccurrence = AlarmRules.completeOccurrence(alarm, ZonedDateTime.now())
+        store.saveAlarm(AlarmRules.markDismissed(alarm))
+        if (!nextOccurrence.isEnabled) return true
+        try {
+            // enable() persists first and rolls back the enabled flag on scheduling failure.
+            enable(nextOccurrence, nextOccurrence.scheduledAtMillis)
+            return true
+        } catch (exception: Exception) {
+            store.log("Repeat reschedule failed for ${alarm.id}: $exception")
+            return false
         }
     }
 

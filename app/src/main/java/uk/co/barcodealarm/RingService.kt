@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 
@@ -37,6 +38,8 @@ class RingService : Service() {
     private val store by lazy { AlarmStore(this) }
     private var mediaPlayer: MediaPlayer? = null
     private var playingAlarmId = -1
+    private var playbackStartedAtElapsedMillis = -1L
+    private var playbackSettings = PlaybackSettings()
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private lateinit var vibrator: Vibrator
@@ -56,6 +59,7 @@ class RingService : Service() {
     override fun onCreate() {
         super.onCreate()
         vibrator = getSystemService(Vibrator::class.java)
+        playbackSettings = PlaybackSettingsStore(this).read()
         createNotificationChannel()
         val powerManager = getSystemService(PowerManager::class.java)
         val alarmWakeLock =
@@ -95,7 +99,7 @@ class RingService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_alarm_notification)
             .setContentTitle("Barcode alarm ringing")
             .setContentText("Scan your barcode or complete maths")
             .setCategory(Notification.CATEGORY_ALARM)
@@ -117,15 +121,27 @@ class RingService : Service() {
             startAlarmPlayback(alarm)
         }
         // Set only this player's gain. Do not change Android's alarm stream or other apps' volume.
-        val playbackVolume = if (isMathsVisible) 0.2f else 1f
+        val playbackVolume = calculatePlaybackGain()
         mediaPlayer?.setVolume(playbackVolume, playbackVolume)
         mainThreadHandler.postDelayed(playbackUpdate, PLAYBACK_UPDATE_INTERVAL_MILLIS)
+    }
+
+    private fun calculatePlaybackGain(): Float {
+        return PlaybackVolume.calculateGain(
+            playbackSettings,
+            playbackStartedAtElapsedMillis,
+            SystemClock.elapsedRealtime(),
+            isMathsVisible,
+        )
     }
 
     private fun startAlarmPlayback(alarm: Alarm) {
         mediaPlayer?.release()
         mediaPlayer = null
         playingAlarmId = alarm.id
+        val now = SystemClock.elapsedRealtime()
+        val savedStart = alarm.playbackStartedAtElapsedMillis
+        playbackStartedAtElapsedMillis = if (savedStart < 0 || savedStart > now) -1 else savedStart
         val audioAttributes =
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -166,6 +182,25 @@ class RingService : Service() {
                 player.isLooping = true
                 player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
                 player.prepare()
+                if (playbackStartedAtElapsedMillis < 0) {
+                    // Begin only once a sound is ready; a slow unavailable sound must not
+                    // consume the fade before the fallback has started playing.
+                    playbackStartedAtElapsedMillis = SystemClock.elapsedRealtime()
+                    try {
+                        store.recordPlaybackStart(alarm.id, playbackStartedAtElapsedMillis)
+                    } catch (exception: Exception) {
+                        // Optional ramp persistence must never prevent the alarm sounding,
+                        // including when local storage is full. Keep this process's clock.
+                        android.util.Log.e(
+                            "BarcodeAlarm",
+                            "Could not persist playback clock",
+                            exception,
+                        )
+                    }
+                }
+                // Set gain before start: otherwise the first audio frames would play at full gain.
+                val initialGain = calculatePlaybackGain()
+                player.setVolume(initialGain, initialGain)
                 player.start()
                 return
             } catch (exception: Exception) {

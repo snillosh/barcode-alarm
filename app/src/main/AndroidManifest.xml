@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
-    <application android:theme="@style/AppTheme" android:label="Barcode Alarm" android:allowBackup="false" android:supportsRtl="true">
+    <application android:theme="@style/AppTheme" android:label="Barcode Alarm" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:allowBackup="false" android:supportsRtl="true">
         <!-- The launcher Activity owns normal pages and in-app navigation. -->
         <activity android:enableOnBackInvokedCallback="true" android:name=".MainActivity" android:exported="true">
             <intent-filter>

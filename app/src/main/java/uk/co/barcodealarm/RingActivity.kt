@@ -114,6 +114,9 @@ class RingActivity : BaseActivity() {
             store.getBarcodes().find { savedBarcode -> savedBarcode.id == alarm.barcodeId }
         if (barcode != null) addCaption("Scan ${barcode.name}")
         addButton("Scan barcode", primary = true) { runUiAction { openBarcodeScanner() } }
+        addButton("Snooze · ${AlarmRules.SNOOZE_MINUTES} minutes") {
+            runUiAction { snoozeAlarm(alarm) }
+        }
         addButton("Emergency maths challenge") { startMathsChallenge(alarm) }
     }
 
@@ -163,9 +166,24 @@ class RingActivity : BaseActivity() {
         showAlarmPage()
     }
 
+    private fun snoozeAlarm(alarm: Alarm) {
+        // Scheduling must succeed before stopping the player or closing the ringing screen.
+        AlarmScheduler(this).snooze(alarm)
+        finishCurrentOccurrence()
+    }
+
     private fun dismissAlarm(alarm: Alarm) {
-        store.saveAlarm(AlarmRules.markDismissed(alarm))
+        val repeatScheduled = AlarmScheduler(this).dismiss(alarm)
         store.log("Dismissed ${alarm.id}")
+        if (!repeatScheduled) {
+            showMessage(
+                "Alarm dismissed, but its next repeat could not be scheduled. Check exact alarm access and enable it again."
+            )
+        }
+        finishCurrentOccurrence()
+    }
+
+    private fun finishCurrentOccurrence() {
         stopService(Intent(this, RingService::class.java))
         RingService.isMathsVisible = false
         if (getActiveAlarm() != null) {
