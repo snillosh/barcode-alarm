@@ -32,11 +32,16 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
-
-      - name: Install Android build tools
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Prepare Android SDK
+        # Ubuntu's hosted image already includes these packages. Reuse them instead
+        # of downloading/replacing the command-line tools on every run.
+        run: |
+          if [[ ! -d "$ANDROID_HOME/platforms/android-36" || ! -d "$ANDROID_HOME/build-tools/36.0.0" ]]; then
+            JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              'platforms;android-36' 'build-tools;36.0.0'
+          fi
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
 
       - name: Set up Gradle and dependency cache
         uses: gradle/actions/setup-gradle@7ca78c16c887dc6c5f36fd6d0cb0f5c23d940e69 # v6

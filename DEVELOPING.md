@@ -298,7 +298,9 @@ receiver. Tests supply explicit wall-clock instants and local zones, including b
 ## GitHub Actions
 
 `.github/workflows/android.yml` provisions Temurin JDK 25 (matching the existing Gradle daemon
-criteria), Android SDK 36 and build tools 36.0.0, and invokes the tracked Gradle wrapper. It
+criteria), reuses SDK 36/build tools 36.0.0 from the Ubuntu runner image (installing only
+if missing), and invokes the tracked Gradle wrapper. SDK installation uses the runner's JDK 17
+for command-line-tool compatibility; Gradle builds use JDK 25. It
 runs the same unit-test, lint, assembly and scanner checks documented above. Gradle dependencies
 and the CI-only debug keystore are cached; pull requests read the main Gradle cache. Actions
 are pinned to reviewed commit IDs, the job token is read-only, and no signing secrets are
