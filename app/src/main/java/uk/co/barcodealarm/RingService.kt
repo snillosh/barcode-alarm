@@ -35,7 +35,7 @@ class RingService : Service() {
         var isMathsVisible = false
     }
 
-    private val store by lazy { AlarmStore(this) }
+    private val store by lazy { ActiveAlarmStore(this, audibleOnly = true) }
     private var mediaPlayer: MediaPlayer? = null
     private var playingAlarmId = -1
     private var playbackStartedAtElapsedMillis = -1L
@@ -101,7 +101,7 @@ class RingService : Service() {
         return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_alarm_notification)
             .setContentTitle("Barcode alarm ringing")
-            .setContentText("Scan your barcode or complete maths")
+            .setContentText("Open your alarm to dismiss or snooze")
             .setCategory(Notification.CATEGORY_ALARM)
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
@@ -127,8 +127,10 @@ class RingService : Service() {
     }
 
     private fun calculatePlaybackGain(): Float {
+        val forceFull = OccurrenceStore(this).get(playingAlarmId)?.fullVolume == true
         return PlaybackVolume.calculateGain(
-            playbackSettings,
+            if (forceFull) playbackSettings.copy(gradualVolumeEnabled = false)
+            else playbackSettings,
             playbackStartedAtElapsedMillis,
             SystemClock.elapsedRealtime(),
             isMathsVisible,

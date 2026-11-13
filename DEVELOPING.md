@@ -261,3 +261,21 @@ the foreground/background; its `v33` counterpart also supplies the monochrome la
 `ic_alarm_notification.xml` uses the same white geometry with tighter optical bounds for
 the small notification icon. If changing the design, update these paths together and inspect
 small-size and adaptive-mask renders. Generated build outputs remain excluded from Git.
+
+
+## Occurrence workflows (0.8.0)
+
+`Alarm` remains the definition/editor model. `Occurrence` is an immutable state-machine
+record containing a unique ID, definition ID and its own Alarm snapshot, plus stage/deadlines.
+`OccurrenceRules` contains pure transition/deadline decisions with explicit clock arguments.
+`OccurrenceStore` persists snapshots separately. `OccurrenceManager` reconciles exact OS
+alarms and notifications after durable transitions. `OccurrenceReceiver` validates each
+callback against the persisted stage and expected deadline. All app entry points share the
+main thread, and completed records are removed so old actions are harmless.
+
+`ActiveAlarmStore` adapts snapshots to the existing playback/maths code. The audio service
+reads only audible occurrences; the Activity can also read silent intermediate stages.
+Escalation's fullVolume flag bypasses only the ramp, retaining maths gain attenuation.
+Definition cancellation explicitly clears all dependent workflows. Repeat registration is
+independent of an older occurrence's verification. Legacy active definitions migrate into
+snapshots on opening/restoration; existing scheduled definition PendingIntents stay valid.

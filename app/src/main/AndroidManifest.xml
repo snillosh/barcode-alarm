@@ -25,6 +25,7 @@
         <!-- Playback survives Activity rotation, backgrounding and scanner use. -->
         <service android:name=".RingService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
         <!-- AlarmManager delivers explicit one-shot PendingIntents here. -->
+        <receiver android:name=".OccurrenceReceiver" android:exported="false"/>
         <receiver android:name=".AlarmReceiver" android:exported="false"/>
         <!-- Restore future occurrences after unlock/boot or system time/package changes. -->
         <receiver android:name=".RestoreReceiver" android:exported="false">

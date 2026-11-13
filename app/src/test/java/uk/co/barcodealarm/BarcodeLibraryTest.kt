@@ -85,8 +85,8 @@ class BarcodeLibraryTest {
     }
 
     @Test
-    fun noSelectionCannotSaveEvenWithOldCode() {
-        assertInvalidArgument { BarcodeLibrary.select(alarm, 0, listOf(shampoo)) }
+    fun noSelectionProducesNormalAlarm() {
+        assertEquals("", BarcodeLibrary.select(alarm, 0, listOf(shampoo)).barcodeValue)
     }
 
     @Test

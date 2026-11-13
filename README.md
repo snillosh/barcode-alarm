@@ -225,3 +225,71 @@ Validation for 0.7.1: APK assembly, all **116 unit tests**, lint (warnings only)
 packaging checks pass. The icon was rendered under circular/rounded-square and sample themed
 masks, then installed and visually checked in the Android emulator's launcher. This update
 changes icon resources and the notification glyph; alarm behaviour is unchanged.
+
+
+## Optional/two-stage dismissal and verification (0.8.0)
+
+The first barcode dropdown now offers **None — normal alarm**. Such alarms have an immediate
+Dismiss button and do not open the camera. Existing saved barcode selections are retained.
+Choosing a first barcode reveals an optional second barcode; distinct codes are required.
+Two-stage intervals are 0–30 minutes (default 1). Verification is independently optional
+(default off), with a delay of 1–60 minutes (default 5) and response allowance of 1–30
+minutes (default 2). All choices survive editor recreation.
+
+First scan silences playback without dismissing. A durable eligibility event posts the
+second-code notification, and an independent deadline five minutes later restarts playback
+at full app gain. The second code completes the occurrence; maths always completes the
+whole occurrence. Maths stays silent in the intentionally silenced stage. An escalation
+still uses the existing maths gain reduction. Snooze retains the correct dismissal stage.
+
+After full dismissal, enabled verification schedules both notification and response deadline
+immediately. **I'm Awake** in the notification or confirmation screen completes it. Swiping
+the notification away does not confirm. An unanswered deadline starts full-gain ringing with
+the original snapshot's dismissal requirements. That follow-up never starts another
+verification. Notifications and PendingIntents use stable occurrence-specific identities.
+
+Definitions and active occurrences are now separate preferences records. Repeat definitions
+register their next delivery when they fire, allowing verification from a previous occurrence
+to coexist with the next one. Editing a definition never changes an active snapshot. Disabling
+or deleting a definition cancels ALL its active/pending occurrences, follow-up notifications
+and deadlines, including current ringing. Main displays active-workflow entry buttons rather
+than forcing you back into a ringing screen, allowing those cancellation actions.
+
+Restore runs on app open and existing boot/system broadcasts. Future/past deadline recovery
+uses saved wall timestamps; the within-boot eligibility countdown uses elapsed realtime.
+After first unlock at reboot, elapsed deadlines are rebased and pending exact callbacks
+restored. No Direct Boot support or boot-time media service is added. Exact-alarm permission
+is required for intermediate deadlines; scheduling failures are reported and transitions
+roll back instead of pretending a silent workflow was scheduled. Notification permission and
+launcher/lock-screen policy still govern presentation, never the independent timeout.
+
+### Physical Pixel 7 Pro / GrapheneOS checklist
+
+- Create a normal alarm, deny camera permission, and use Dismiss. Test snooze separately.
+- Verify an upgraded single-code alarm still rejects ordinary dismissal and incorrect codes.
+- Use two named codes and interval 0, then 1 minute. Check that first scan silences both
+  sound/vibration and displays the second code name. Scan too early or re-scan the first code.
+- Close/lock the app during the wait; verify the ready notification opens the right occurrence.
+  Ignore it and verify full-volume escalation after the five-minute completion window.
+- Complete maths before and after the first scan; verify progress survives navigation and
+  silent stages stay silent. Escalation maths should retain its reduced playback gain.
+- Enable verification for normal, one-code and two-code alarms. Confirm directly from the
+  notification while locked where Android permits, and by tapping through to confirmation.
+- Swipe away/deny/delay notifications: an unanswered response deadline must still ring.
+  Verify both barcode stages again on a failed two-stage verification, and no second cycle.
+- Snooze a second-stage escalation and a verification escalation; check their resumed stages.
+- Schedule overlapping repeating alarms/verification, edit definitions, disable/delete them,
+  and confirm no unrelated occurrence is confirmed and no orphan notification remains.
+- Kill the process normally and reboot/unlock during each pending state. Verify recovered
+  deadlines, permissions diagnostics, and that duplicate callbacks do not duplicate playback.
+
+Deterministic workflow tests use supplied wall/elapsed clock values; no real five-minute
+sleeps are required. The new feature still requires the physical-device checks above.
+
+Validation for 0.8.0: all **156 JVM unit tests**, debug APK assembly, lint (no errors), and
+scanner packaging checks pass. Isolated Android-emulator smoke tests verified ordinary
+dismissal, verification confirmation from both the screen and notification action, silent
+second-stage waiting and full-gain timeout escalation, escalation with notification permission
+denied, and deletion stopping an active follow-up. Fixture deadlines were shortened for
+these tests. Physical camera, audible volume, lock-screen policy and overnight GrapheneOS
+delivery still require the device checklist above.

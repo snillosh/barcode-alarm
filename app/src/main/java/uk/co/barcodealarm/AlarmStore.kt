@@ -10,7 +10,7 @@ import org.json.JSONObject
  * Android's private key/value store; the two lists are JSON strings. Keep the on-disk keys
  * unchanged when renaming Kotlin properties.
  */
-class AlarmStore(context: Context) {
+class AlarmStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("alarms", Context.MODE_PRIVATE)
 
     fun getAlarms(): List<Alarm> {
@@ -60,7 +60,12 @@ class AlarmStore(context: Context) {
     }
 
     fun deleteBarcode(id: Int) {
-        val remainingBarcodes = BarcodeLibrary.delete(getBarcodes(), id, getAlarms())
+        val remainingBarcodes =
+            BarcodeLibrary.delete(
+                getBarcodes(),
+                id,
+                getAlarms() + OccurrenceStore(context).all().map { it.snapshot },
+            )
         writeBarcodes(remainingBarcodes)
     }
 

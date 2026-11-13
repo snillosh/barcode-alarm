@@ -16,9 +16,17 @@ class AlarmReceiver : BroadcastReceiver() {
             return
         }
 
-        // Consume this delivery before playback. A repeat series stays enabled, while
-        // isRinging rejects duplicate deliveries until dismissal schedules its next day.
-        store.saveAlarm(AlarmRules.markTriggered(alarm))
+        // Consume this delivery before playback. Scheduling the next repeat now lets it
+        // coexist with this occurrence, including any pending verification.
+        OccurrenceStore(context).create(alarm)
+        store.saveAlarm(AlarmRules.markDismissed(alarm))
+        if (alarm.repeatDays.isNotEmpty()) {
+            try {
+                AlarmScheduler(context).enable(alarm.copy(isRinging = false))
+            } catch (e: Exception) {
+                store.log("Next repeat failed: $e")
+            }
+        }
         store.log("Triggered ${alarm.id}")
         try {
             context.startForegroundService(Intent(context, RingService::class.java))

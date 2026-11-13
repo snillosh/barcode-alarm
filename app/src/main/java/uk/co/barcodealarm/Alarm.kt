@@ -25,6 +25,15 @@ data class Alarm(
     val correctAnswerCount: Int = 0,
     // Zero means no library selection; persisted alarms normally have a positive ID.
     val barcodeId: Int = 0,
+    val firstBarcodeName: String = "",
+    val secondBarcodeName: String = "",
+    val secondBarcodeId: Int = 0,
+    val secondBarcodeValue: String = "",
+    val secondBarcodeFormat: String = "",
+    val scanIntervalMinutes: Int = 1,
+    val verificationEnabled: Boolean = false,
+    val verificationDelayMinutes: Int = 5,
+    val verificationResponseMinutes: Int = 2,
     // Empty means one-shot. Java uses ISO weekday numbers: Monday=1 through Sunday=7.
     val repeatDays: Set<DayOfWeek> = emptySet(),
     // True only while a snooze delivery is pending, rather than a regular scheduled day.

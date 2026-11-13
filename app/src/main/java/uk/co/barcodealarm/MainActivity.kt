@@ -59,6 +59,10 @@ class MainActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        runUiAction {
+            OccurrenceManager(this).migrateLegacy()
+            OccurrenceManager(this).restore(false)
+        }
         restorePageState(savedInstanceState)
         when (currentPage) {
             Page.HOME -> showHomePage()
@@ -84,6 +88,13 @@ class MainActivity : BaseActivity() {
                     barcodeFormat = state.getString("format", ""),
                     soundUri = state.getString("sound", ""),
                     barcodeId = state.getInt("barcodeId"),
+                    secondBarcodeId = state.getInt("secondId"),
+                    secondBarcodeValue = state.getString("secondValue", ""),
+                    secondBarcodeFormat = state.getString("secondFormat", ""),
+                    scanIntervalMinutes = state.getInt("scanInterval", 1),
+                    verificationEnabled = state.getBoolean("verify"),
+                    verificationDelayMinutes = state.getInt("verifyDelay", 5),
+                    verificationResponseMinutes = state.getInt("verifyResponse", 2),
                     repeatDays =
                         state
                             .getIntArray("repeatDays")
@@ -112,6 +123,13 @@ class MainActivity : BaseActivity() {
             outState.putString("format", draft.barcodeFormat)
             outState.putString("sound", draft.soundUri)
             outState.putInt("barcodeId", draft.barcodeId)
+            outState.putInt("secondId", draft.secondBarcodeId)
+            outState.putString("secondValue", draft.secondBarcodeValue)
+            outState.putString("secondFormat", draft.secondBarcodeFormat)
+            outState.putInt("scanInterval", draft.scanIntervalMinutes)
+            outState.putBoolean("verify", draft.verificationEnabled)
+            outState.putInt("verifyDelay", draft.verificationDelayMinutes)
+            outState.putInt("verifyResponse", draft.verificationResponseMinutes)
             outState.putIntArray(
                 "repeatDays",
                 draft.repeatDays.map { day -> day.value }.toIntArray(),
@@ -122,11 +140,8 @@ class MainActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (store.getAlarms().any { alarm -> alarm.isRinging }) {
+        if (OccurrenceStore(this).all().any { it.audible })
             startForegroundService(Intent(this, RingService::class.java))
-            startActivity(Intent(this, RingActivity::class.java))
-            return
-        }
         // Refresh permission status after returning from Android Settings, without replacing a
         // draft.
         when (currentPage) {
@@ -146,6 +161,15 @@ class MainActivity : BaseActivity() {
         showPage("Your alarms", "A deliberate start to your day.")
         timePicker = null
         addSchedulingWarnings()
+        for (occurrence in OccurrenceStore(this).all()) {
+            if (occurrence.active || occurrence.stage == OccurrenceStage.VERIFY_RESPONSE) {
+                addButton(if (occurrence.active) "Open active alarm" else "Are you still awake?") {
+                    startActivity(
+                        Intent(this, RingActivity::class.java).putExtra("occurrence", occurrence.id)
+                    )
+                }
+            }
+        }
 
         val alarms = store.getAlarms().sortedBy { alarm -> alarm.hour * 60 + alarm.minute }
         if (alarms.isEmpty()) {
@@ -214,8 +238,10 @@ class MainActivity : BaseActivity() {
                 addCaption(if (alarm.isSnoozed) "Snoozed until $nextTime" else "Next: $nextTime")
             }
             addCaption(
-                if (alarm.isEnabled) "Enabled · scan to dismiss"
-                else "Disabled · enable for the next occurrence"
+                if (alarm.isEnabled) {
+                    if (alarm.barcodeValue.isEmpty()) "Enabled · tap to dismiss"
+                    else "Enabled · scan to dismiss"
+                } else "Disabled · enable for the next occurrence"
             )
             addButtonRow {
                 addButton("Edit alarm") {
@@ -253,6 +279,7 @@ class MainActivity : BaseActivity() {
     private fun deleteAlarm(alarm: Alarm) {
         check(!alarm.isRinging)
         AlarmScheduler(this).cancel(alarm)
+        OccurrenceManager(this).cancelDefinition(alarm.id)
         store.deleteAlarm(alarm.id)
         showHomePage()
     }
@@ -313,8 +340,10 @@ class MainActivity : BaseActivity() {
         contentLayout.addView(picker)
         addSpace(12)
         addRepeatDaySelector(draft)
-        addCaption("DISMISSAL BARCODE")
+        addCaption("First barcode")
         addBarcodeDropdown(draft)
+        addSecondStageSettings(draft)
+        addVerificationSettings(draft)
         addButton("Manage barcodes") {
             captureEditorTime()
             showBarcodeLibrary()
@@ -353,14 +382,124 @@ class MainActivity : BaseActivity() {
         addSpace(12)
     }
 
+    private fun minuteSelector(
+        title: String,
+        current: Int,
+        values: List<Int>,
+        changed: (Int) -> Unit,
+    ) {
+        addCaption(title)
+        val spinner = Spinner(this)
+        val adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_item, values.map { "$it minutes" })
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinner.adapter = adapter
+        spinner.setSelection(values.indexOf(current).coerceAtLeast(0))
+        spinner.minimumHeight = toPixels(56)
+        spinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long,
+                ) {
+                    changed(values[position])
+                }
+            }
+        contentLayout.addView(spinner)
+    }
+
+    private fun addSecondStageSettings(draft: Alarm) {
+        if (draft.barcodeId == 0) return
+        addCaption("Second barcode (optional)")
+        val codes = store.getBarcodes().filter { it.id != draft.barcodeId }.sortedBy { it.name }
+        val spinner = Spinner(this)
+        val adapter =
+            ArrayAdapter(
+                this,
+                android.R.layout.simple_spinner_item,
+                listOf("None — one barcode only") + codes.map { it.name },
+            )
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinner.adapter = adapter
+        spinner.setSelection(codes.indexOfFirst { it.id == draft.secondBarcodeId } + 1)
+        spinner.minimumHeight = toPixels(56)
+        spinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long,
+                ) {
+                    val selected = if (position == 0) null else codes[position - 1]
+                    if (alarmDraft?.secondBarcodeId != (selected?.id ?: 0)) {
+                        captureEditorTime()
+                        alarmDraft =
+                            alarmDraft?.copy(
+                                secondBarcodeId = selected?.id ?: 0,
+                                secondBarcodeValue = selected?.barcodeValue.orEmpty(),
+                                secondBarcodeFormat = selected?.barcodeFormat.orEmpty(),
+                                scanIntervalMinutes = 1,
+                            )
+                        showAlarmEditor()
+                    }
+                }
+            }
+        contentLayout.addView(spinner)
+        if (draft.secondBarcodeId != 0)
+            minuteSelector(
+                "Minimum time between barcode scans",
+                draft.scanIntervalMinutes,
+                (0..30).toList(),
+            ) {
+                alarmDraft = alarmDraft?.copy(scanIntervalMinutes = it)
+            }
+    }
+
+    private fun addVerificationSettings(draft: Alarm) {
+        val checkbox = CheckBox(this)
+        checkbox.text = "Enable wake-up verification"
+        checkbox.setTextColor(textColor)
+        checkbox.minimumHeight = toPixels(56)
+        checkbox.isChecked = draft.verificationEnabled
+        checkbox.setOnCheckedChangeListener { _, checked ->
+            captureEditorTime()
+            alarmDraft = alarmDraft?.copy(verificationEnabled = checked)
+            showAlarmEditor()
+        }
+        contentLayout.addView(checkbox)
+        if (draft.verificationEnabled) {
+            minuteSelector(
+                "Verify after dismissal (minutes)",
+                draft.verificationDelayMinutes,
+                (1..60).toList(),
+            ) {
+                alarmDraft = alarmDraft?.copy(verificationDelayMinutes = it)
+            }
+            minuteSelector(
+                "Time allowed to respond (minutes)",
+                draft.verificationResponseMinutes,
+                (1..30).toList(),
+            ) {
+                alarmDraft = alarmDraft?.copy(verificationResponseMinutes = it)
+            }
+        }
+    }
+
     private fun addBarcodeDropdown(draft: Alarm) {
         val library =
             store.getBarcodes().sortedBy { barcode -> barcode.name.lowercase(Locale.ROOT) }
         if (library.isEmpty()) {
-            addCaption("Your library is empty. Add a barcode below before saving this alarm.")
+            addCaption("No saved barcodes. This alarm can use the normal Dismiss button.")
         }
-        // Index zero is a prompt, not a valid barcode selection.
-        val names = listOf("Select a barcode…") + library.map { barcode -> barcode.name }
+        // Index zero selects a normal alarm with no scanning requirement.
+        val names = listOf("None — normal alarm") + library.map { barcode -> barcode.name }
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, names)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         val dropdown = Spinner(this)
@@ -380,7 +519,16 @@ class MainActivity : BaseActivity() {
                     id: Long,
                 ) {
                     val selectedId = if (position == 0) 0 else library[position - 1].id
-                    alarmDraft = alarmDraft?.copy(barcodeId = selectedId)
+                    if (alarmDraft?.barcodeId != selectedId) {
+                        captureEditorTime()
+                        var updated =
+                            BarcodeLibrary.select(checkNotNull(alarmDraft), selectedId, library)
+                        if (updated.secondBarcodeId == selectedId) {
+                            updated = BarcodeLibrary.selectSecond(updated, 0, library)
+                        }
+                        alarmDraft = updated
+                        showAlarmEditor()
+                    }
                 }
             }
         contentLayout.addView(dropdown)
@@ -399,7 +547,20 @@ class MainActivity : BaseActivity() {
     private fun saveAlarmDraft() {
         captureEditorTime()
         val draft = checkNotNull(alarmDraft)
-        val updatedAlarm = BarcodeLibrary.select(draft, draft.barcodeId, store.getBarcodes())
+        require(draft.scanIntervalMinutes in 0..30) { "Scan interval must be 0–30 minutes" }
+        require(draft.verificationDelayMinutes in 1..60) {
+            "Verification delay must be 1–60 minutes"
+        }
+        require(draft.verificationResponseMinutes in 1..30) {
+            "Response allowance must be 1–30 minutes"
+        }
+        var updatedAlarm = BarcodeLibrary.select(draft, draft.barcodeId, store.getBarcodes())
+        updatedAlarm =
+            BarcodeLibrary.selectSecond(
+                updatedAlarm,
+                updatedAlarm.secondBarcodeId,
+                store.getBarcodes(),
+            )
         check(store.getAlarm(updatedAlarm.id)?.isRinging != true) { "Cannot edit a ringing alarm" }
         if (updatedAlarm.isEnabled) {
             AlarmScheduler(this).enable(updatedAlarm)
@@ -458,7 +619,10 @@ class MainActivity : BaseActivity() {
         addCard {
             addText(barcode.name, 22f)
             addCaption(barcode.barcodeFormat.replace('_', ' '))
-            val alarmCount = store.getAlarms().count { alarm -> alarm.barcodeId == barcode.id }
+            val alarmCount =
+                store.getAlarms().count { alarm ->
+                    alarm.barcodeId == barcode.id || alarm.secondBarcodeId == barcode.id
+                }
             addCaption(if (alarmCount == 1) "Used by 1 alarm" else "Used by $alarmCount alarms")
             addButtonRow {
                 addButton("Rename") { showRenameBarcodeDialog(barcode) }

@@ -41,6 +41,11 @@ object Navigation {
         return draft.hour != original.hour ||
             draft.minute != original.minute ||
             draft.barcodeId != original.barcodeId ||
+            draft.secondBarcodeId != original.secondBarcodeId ||
+            draft.scanIntervalMinutes != original.scanIntervalMinutes ||
+            draft.verificationEnabled != original.verificationEnabled ||
+            draft.verificationDelayMinutes != original.verificationDelayMinutes ||
+            draft.verificationResponseMinutes != original.verificationResponseMinutes ||
             draft.repeatDays != original.repeatDays ||
             draft.soundUri != original.soundUri
     }

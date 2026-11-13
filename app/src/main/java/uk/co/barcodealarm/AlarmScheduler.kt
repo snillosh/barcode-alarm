@@ -103,6 +103,7 @@ class AlarmScheduler(private val context: Context) {
     }
 
     fun disable(alarm: Alarm) {
+        OccurrenceManager(context).cancelDefinition(alarm.id)
         check(!alarm.isRinging)
         cancel(alarm)
         store.saveAlarm(AlarmRules.markDismissed(alarm))

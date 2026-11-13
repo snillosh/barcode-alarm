@@ -25,6 +25,15 @@ object AlarmJsonCodec {
                     mathsStartedAtElapsedMillis = json.optLong("started", -1),
                     correctAnswerCount = json.optInt("correct"),
                     barcodeId = json.optInt("barcodeId"),
+                    firstBarcodeName = json.optString("firstName"),
+                    secondBarcodeName = json.optString("secondName"),
+                    secondBarcodeId = json.optInt("secondBarcodeId"),
+                    secondBarcodeValue = json.optString("secondCode"),
+                    secondBarcodeFormat = json.optString("secondFormat"),
+                    scanIntervalMinutes = json.optInt("scanInterval", 1),
+                    verificationEnabled = json.optBoolean("verificationEnabled"),
+                    verificationDelayMinutes = json.optInt("verificationDelay", 5),
+                    verificationResponseMinutes = json.optInt("verificationResponse", 2),
                     repeatDays = decodeRepeatDays(json.optJSONArray("repeatDays")),
                     isSnoozed = json.optBoolean("snoozed"),
                     occurrenceScheduledAtMillis = json.optLong("occurrenceDue"),
@@ -61,6 +70,15 @@ object AlarmJsonCodec {
             json.put("started", alarm.mathsStartedAtElapsedMillis)
             json.put("correct", alarm.correctAnswerCount)
             json.put("barcodeId", alarm.barcodeId)
+            json.put("firstName", alarm.firstBarcodeName)
+            json.put("secondName", alarm.secondBarcodeName)
+            json.put("secondBarcodeId", alarm.secondBarcodeId)
+            json.put("secondCode", alarm.secondBarcodeValue)
+            json.put("secondFormat", alarm.secondBarcodeFormat)
+            json.put("scanInterval", alarm.scanIntervalMinutes)
+            json.put("verificationEnabled", alarm.verificationEnabled)
+            json.put("verificationDelay", alarm.verificationDelayMinutes)
+            json.put("verificationResponse", alarm.verificationResponseMinutes)
             json.put(
                 "repeatDays",
                 JSONArray(alarm.repeatDays.sortedBy { day -> day.value }.map { day -> day.value }),

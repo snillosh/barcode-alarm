@@ -20,6 +20,12 @@ class RestoreReceiver : BroadcastReceiver() {
         val isClockChange =
             intent.action == Intent.ACTION_TIME_CHANGED ||
                 intent.action == Intent.ACTION_TIMEZONE_CHANGED
+        try {
+            OccurrenceManager(context).migrateLegacy()
+        } catch (exception: Exception) {
+            store.log("Active alarm migration failed: $exception")
+            return
+        }
         for (alarm in store.getAlarms()) {
             val restored =
                 AlarmRules.restoreAfterSystemChange(
@@ -41,6 +47,14 @@ class RestoreReceiver : BroadcastReceiver() {
                 store.saveAlarm(AlarmRules.markDismissed(restored))
                 store.log("Restore failed: $exception")
             }
+        }
+        try {
+            OccurrenceManager(context).restore(isDeviceBoot)
+        } catch (exception: Exception) {
+            // Retain state and the previous boot marker so opening the app can retry and
+            // display the scheduling/permission diagnostic.
+            store.log("Occurrence restore failed: $exception")
+            return
         }
         // Record only after restoration completed, so an interrupted restoration can retry.
         if (isDeviceBoot && bootCount >= 0) store.recordRestoredBoot(bootCount)

@@ -57,7 +57,8 @@ object BarcodeLibrary {
     }
 
     fun delete(barcodes: List<SavedBarcode>, id: Int, alarms: List<Alarm>): List<SavedBarcode> {
-        val isUsedByAlarm = alarms.any { alarm -> alarm.barcodeId == id }
+        val isUsedByAlarm =
+            alarms.any { alarm -> alarm.barcodeId == id || alarm.secondBarcodeId == id }
         require(!isUsedByAlarm) {
             "This barcode is used by an alarm. Choose another barcode for that alarm or delete the alarm first."
         }
@@ -66,6 +67,16 @@ object BarcodeLibrary {
 
     fun select(alarm: Alarm, id: Int, barcodes: List<SavedBarcode>): Alarm {
         check(!alarm.isRinging) { "Cannot edit a ringing alarm" }
+        if (id == 0)
+            return alarm.copy(
+                barcodeId = 0,
+                barcodeValue = "",
+                barcodeFormat = "",
+                secondBarcodeId = 0,
+                secondBarcodeValue = "",
+                secondBarcodeFormat = "",
+                scanIntervalMinutes = 0,
+            )
         val selectedBarcode =
             barcodes.find { barcode -> barcode.id == id }
                 ?: throw IllegalArgumentException("Select a barcode from your library")
@@ -74,6 +85,31 @@ object BarcodeLibrary {
             barcodeId = selectedBarcode.id,
             barcodeValue = selectedBarcode.barcodeValue,
             barcodeFormat = selectedBarcode.barcodeFormat,
+        )
+    }
+
+    fun selectSecond(alarm: Alarm, id: Int, barcodes: List<SavedBarcode>): Alarm {
+        if (id == 0 || alarm.barcodeId == 0)
+            return alarm.copy(
+                secondBarcodeId = 0,
+                secondBarcodeValue = "",
+                secondBarcodeFormat = "",
+            )
+        val second = barcodes.find { it.id == id } ?: error("Select a second barcode")
+        require(
+            !AlarmRules.barcodesMatch(
+                alarm.barcodeValue,
+                alarm.barcodeFormat,
+                second.barcodeValue,
+                second.barcodeFormat,
+            )
+        ) {
+            "Choose different barcodes for each stage"
+        }
+        return alarm.copy(
+            secondBarcodeId = id,
+            secondBarcodeValue = second.barcodeValue,
+            secondBarcodeFormat = second.barcodeFormat,
         )
     }
 

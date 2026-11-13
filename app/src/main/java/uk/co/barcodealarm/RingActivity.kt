@@ -20,10 +20,12 @@ class RingActivity : BaseActivity() {
     private var isMathsVisible = false
     private var currentQuestion = MathsQuestion.create()
     private val mainThreadHandler = Handler(Looper.getMainLooper())
-    private val store by lazy { AlarmStore(this) }
+    private val store by lazy { ActiveAlarmStore(this) }
 
     private fun getActiveAlarm(): Alarm? {
-        return store.getAlarms().firstOrNull { alarm -> alarm.isRinging }
+        val requested = intent.getIntExtra("occurrence", -1)
+        return if (requested != -1) store.getAlarms().find { it.id == requested }
+        else store.getAlarms().firstOrNull()
     }
 
     private val countdownUpdate =
@@ -31,9 +33,10 @@ class RingActivity : BaseActivity() {
             override fun run() {
                 val alarm = getActiveAlarm()
                 if (alarm == null) {
-                    finish()
+                    showAlarmPage()
                     return
                 }
+                if (!isMathsVisible) stageCountdown?.text = stageText(alarm.id)
                 if (isMathsVisible) {
                     if (AlarmRules.canDismissWithMaths(alarm, SystemClock.elapsedRealtime())) {
                         dismissAlarm(alarm)
@@ -51,6 +54,14 @@ class RingActivity : BaseActivity() {
         setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         isMathsVisible = savedInstanceState?.getBoolean("maths") ?: false
+        showAlarmPage()
+    }
+
+    override fun onNewIntent(newIntent: Intent) {
+        super.onNewIntent(newIntent)
+        intent = newIntent
+        isMathsVisible = false
+        RingService.isMathsVisible = false
         showAlarmPage()
     }
 
@@ -92,7 +103,20 @@ class RingActivity : BaseActivity() {
     private fun showAlarmPage() {
         val alarm = getActiveAlarm()
         if (alarm == null) {
-            finish()
+            val verification = OccurrenceStore(this).get(intent.getIntExtra("occurrence", -1))
+            if (
+                verification != null &&
+                    verification.stage in
+                        setOf(OccurrenceStage.VERIFY_DELAY, OccurrenceStage.VERIFY_RESPONSE)
+            ) {
+                showPage("Are you still awake?")
+                addButton("I'm Awake", primary = true) {
+                    runUiAction {
+                        OccurrenceManager(this).event(verification.id, "awake", 0)
+                        finish()
+                    }
+                }
+            } else finish()
             return
         }
         val title = if (isMathsVisible) "Stay with it" else "Time to get up"
@@ -109,15 +133,55 @@ class RingActivity : BaseActivity() {
         if (isMathsVisible) addMathsChallenge(alarm) else addBarcodeDismissal(alarm)
     }
 
+    private var stageCountdown: TextView? = null
+
+    private fun stageText(id: Int): String {
+        val occurrence = OccurrenceStore(this).get(id) ?: return ""
+        if (occurrence.stage == OccurrenceStage.SECOND_RINGING)
+            return "Completion window missed. Scan the second barcode to stop the alarm."
+        val target =
+            if (occurrence.stage == OccurrenceStage.SECOND_WAIT) occurrence.eligibleAt
+            else occurrence.deadlineAt
+        val remaining =
+            if (occurrence.stage == OccurrenceStage.SECOND_WAIT && occurrence.eligibleElapsed > 0)
+                occurrence.eligibleElapsed - SystemClock.elapsedRealtime()
+            else target - System.currentTimeMillis()
+        val seconds = remaining.coerceAtLeast(0) / 1000
+        return if (occurrence.stage == OccurrenceStage.SECOND_WAIT)
+            "Alarm silenced. Ready in ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+        else
+            "Second barcode ready. Time before restart: ${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+    }
+
     private fun addBarcodeDismissal(alarm: Alarm) {
-        val barcode =
-            store.getBarcodes().find { savedBarcode -> savedBarcode.id == alarm.barcodeId }
-        if (barcode != null) addCaption("Scan ${barcode.name}")
-        addButton("Scan barcode", primary = true) { runUiAction { openBarcodeScanner() } }
-        addButton("Snooze · ${AlarmRules.SNOOZE_MINUTES} minutes") {
-            runUiAction { snoozeAlarm(alarm) }
-        }
-        addButton("Emergency maths challenge") { startMathsChallenge(alarm) }
+        val occurrence = OccurrenceStore(this).get(alarm.id) ?: return
+        val second =
+            occurrence.stage in
+                setOf(
+                    OccurrenceStage.SECOND_WAIT,
+                    OccurrenceStage.SECOND_READY,
+                    OccurrenceStage.SECOND_RINGING,
+                )
+        val barcodeId = if (second) alarm.secondBarcodeId else alarm.barcodeId
+        val barcode = store.getBarcodes().find { it.id == barcodeId }
+        if (second) stageCountdown = addCaption(stageText(alarm.id))
+        val name = if (second) alarm.secondBarcodeName else alarm.firstBarcodeName
+        if (name.isNotEmpty()) addCaption("Scan $name")
+        else if (barcode != null) addCaption("Scan ${barcode.name}")
+        if (alarm.barcodeValue.isEmpty()) {
+            addButton("Dismiss", primary = true) {
+                runUiAction {
+                    OccurrenceManager(this).dismiss(alarm.id, normal = true)
+                    finishCurrentOccurrence()
+                }
+            }
+        } else addButton("Scan barcode", primary = true) { runUiAction { openBarcodeScanner() } }
+        if (occurrence.audible)
+            addButton("Snooze · ${AlarmRules.SNOOZE_MINUTES} minutes") {
+                runUiAction { snoozeAlarm(alarm) }
+            }
+        if (alarm.barcodeValue.isNotEmpty())
+            addButton("Emergency maths challenge") { startMathsChallenge(alarm) }
     }
 
     private fun startMathsChallenge(alarm: Alarm) {
@@ -168,27 +232,25 @@ class RingActivity : BaseActivity() {
 
     private fun snoozeAlarm(alarm: Alarm) {
         // Scheduling must succeed before stopping the player or closing the ringing screen.
-        AlarmScheduler(this).snooze(alarm)
+        OccurrenceManager(this).snooze(alarm.id)
         finishCurrentOccurrence()
     }
 
     private fun dismissAlarm(alarm: Alarm) {
-        val repeatScheduled = AlarmScheduler(this).dismiss(alarm)
-        store.log("Dismissed ${alarm.id}")
-        if (!repeatScheduled) {
-            showMessage(
-                "Alarm dismissed, but its next repeat could not be scheduled. Check exact alarm access and enable it again."
-            )
-        }
+        OccurrenceManager(this).dismiss(alarm.id)
+        store.log("Dismissed occurrence ${alarm.id}")
         finishCurrentOccurrence()
     }
 
     private fun finishCurrentOccurrence() {
         stopService(Intent(this, RingService::class.java))
         RingService.isMathsVisible = false
-        if (getActiveAlarm() != null) {
+        val remaining = store.getAlarms().firstOrNull()
+        if (remaining != null) {
+            intent = Intent(this, RingActivity::class.java).putExtra("occurrence", remaining.id)
             // Simultaneous occurrences each require their own authorised dismissal.
-            startForegroundService(Intent(this, RingService::class.java))
+            if (OccurrenceStore(this).all().any { it.audible })
+                startForegroundService(Intent(this, RingService::class.java))
             isMathsVisible = false
             showAlarmPage()
         } else {
@@ -204,13 +266,9 @@ class RingActivity : BaseActivity() {
             IntentIntegrator.parseActivityResult(requestCode, resultCode, data) ?: return
         val alarm = getActiveAlarm() ?: return
         val scannedValue = scanResult.contents ?: return
-        val matches =
-            AlarmRules.barcodesMatch(
-                alarm.barcodeValue,
-                alarm.barcodeFormat,
-                scannedValue,
-                scanResult.formatName,
-            )
-        if (matches) dismissAlarm(alarm) else showMessage("Incorrect barcode")
+        runUiAction {
+            OccurrenceManager(this).scan(alarm.id, scannedValue, scanResult.formatName)
+            finishCurrentOccurrence()
+        }
     }
 }
