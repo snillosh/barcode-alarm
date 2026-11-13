@@ -294,3 +294,16 @@ an optional `label` key with a blank default; no destructive migration is needed
 snapshot serialization automatically carries labels. `MainActivity` uses native EditText and
 existing cards/buttons/Toast, with a lifecycle-scoped home countdown callback and clock-change
 receiver. Tests supply explicit wall-clock instants and local zones, including both DST changes.
+
+## GitHub Actions
+
+`.github/workflows/android.yml` provisions Temurin JDK 25 (matching the existing Gradle daemon
+criteria), Android SDK 36 and build tools 36.0.0, and invokes the tracked Gradle wrapper. It
+runs the same unit-test, lint, assembly and scanner checks documented above. Gradle dependencies
+and the CI-only debug keystore are cached; pull requests read the main Gradle cache. Actions
+are pinned to reviewed commit IDs, the job token is read-only, and no signing secrets are
+required. APKs are uploaded only after successful validation; diagnostic reports upload even
+on failure. See README for downloads and debug signing/installation behavior.
+
+The user's standing workflow is recorded in `AGENTS.md`: complete relevant checks, commit,
+and push completed code changes using the SSH origin.

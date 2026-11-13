@@ -13,6 +13,25 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 If required, set `sdk.dir=/path/to/Android/Sdk` in an untracked `local.properties`. The APK is debug signed; keep the same signing key for updates. No release signing configuration is included.
 
+## Download an APK from GitHub
+
+Open [Android build and test](https://github.com/snillosh/barcode-alarm/actions/workflows/android.yml),
+select a successful run, and download **barcode-alarm-debug-…** under **Artifacts** (GitHub sign-in
+required). Extract the downloaded archive and install `app-debug.apk` on your phone. The run
+summary also links to the APK artifact. APK downloads are retained for 30 days; **Run workflow**
+can create a fresh build at any time.
+
+The pipeline runs on pushes to `main`, pull requests targeting `main`, and manual runs. It runs
+all JVM unit tests, Android lint, builds the debug APK, and checks the scanner runtime classes
+inside that APK. Test/lint reports are retained for 14 days, including after failed checks.
+Only a build that passes every check publishes an APK.
+
+CI uses its own debug signing key, cached across builds. It differs from a locally built APK's
+key, so moving from a local install to CI may require uninstalling the old app first, which
+clears saved alarms and barcodes. Later CI builds normally update each other; if GitHub evicts
+the signing-key cache, the key is regenerated. These are development builds, not release-signed
+packages. Phone/GrapheneOS behavior still needs the physical-device checks below.
+
 ## First use
 
 1. Open Settings and diagnostics. Grant exact alarm access, notifications and full-screen intent access. Grant camera permission when scanning. Open app battery settings and select unrestricted background use manually.
