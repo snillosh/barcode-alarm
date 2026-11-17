@@ -18,6 +18,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".TimerActivity" android:exported="false" android:enableOnBackInvokedCallback="true"/>
         <!-- A separate lock-screen Activity provides dismissal without owning audio playback. -->
         <activity android:enableOnBackInvokedCallback="true" android:name=".RingActivity" android:exported="false" android:launchMode="singleTask" android:showWhenLocked="true" android:turnScreenOn="true"/>
         <!-- Reuse ZXing camera logic, keeping its window in portrait. -->

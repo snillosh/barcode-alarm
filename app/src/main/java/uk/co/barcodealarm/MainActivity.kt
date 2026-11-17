@@ -94,6 +94,8 @@ class MainActivity : BaseActivity() {
             Page.EDITOR -> showAlarmEditor()
             Page.BARCODES -> showBarcodeLibrary()
         }
+        if (intent.getBooleanExtra("openBarcodes", false) && savedInstanceState == null)
+            showBarcodeLibrary()
         if (scannedBarcodeValue != null) {
             showScannedBarcodeNameDialog()
         }
@@ -203,9 +205,11 @@ class MainActivity : BaseActivity() {
         currentPage = Page.HOME
         showPage("Your alarms", "A deliberate start to your day.")
         timePicker = null
+        addTopLevelTabs(timersSelected = false)
         addSchedulingWarnings()
         addNextAlarmCard()
-        for (occurrence in OccurrenceStore(this).all()) {
+        for (occurrence in
+            OccurrenceStore(this).all().filter { it.source == OccurrenceSource.ALARM }) {
             if (occurrence.active || occurrence.stage == OccurrenceStage.VERIFY_RESPONSE) {
                 addButton(if (occurrence.active) "Open active alarm" else "Are you still awake?") {
                     startActivity(
@@ -394,6 +398,14 @@ class MainActivity : BaseActivity() {
     }
 
     private fun navigateBack() {
+        if (
+            currentPage == Page.BARCODES &&
+                alarmDraft == null &&
+                intent.getBooleanExtra("openBarcodes", false)
+        ) {
+            finish()
+            return
+        }
         if (currentPage == Page.EDITOR) captureEditorTime()
         val draft = alarmDraft
         val hasChanges =
@@ -746,7 +758,13 @@ class MainActivity : BaseActivity() {
         }
         for (barcode in library) addBarcodeCard(barcode)
         addButton("Scan new barcode", primary = true) { runUiAction { openBarcodeScanner() } }
-        addButton(if (alarmDraft != null) "Back to alarm" else "Back to alarms") { navigateBack() }
+        addButton(
+            if (alarmDraft != null) "Back to alarm"
+            else if (intent.getBooleanExtra("openBarcodes", false)) "Back to timer"
+            else "Back to alarms"
+        ) {
+            navigateBack()
+        }
     }
 
     private fun addBarcodeCard(barcode: SavedBarcode) {
@@ -757,10 +775,17 @@ class MainActivity : BaseActivity() {
                 store.getAlarms().count { alarm ->
                     alarm.barcodeId == barcode.id || alarm.secondBarcodeId == barcode.id
                 }
-            addCaption(if (alarmCount == 1) "Used by 1 alarm" else "Used by $alarmCount alarms")
+            val timerCount =
+                TimerStore(this).all().count {
+                    it.configuration.barcodeId == barcode.id ||
+                        it.configuration.secondBarcodeId == barcode.id
+                }
+            addCaption("Used by $alarmCount alarm(s) and $timerCount timer(s)")
             addButtonRow {
                 addButton("Rename") { showRenameBarcodeDialog(barcode) }
-                addButton("Delete", danger = true) { confirmBarcodeDeletion(barcode, alarmCount) }
+                addButton("Delete", danger = true) {
+                    confirmBarcodeDeletion(barcode, alarmCount + timerCount)
+                }
             }
         }
     }
@@ -768,7 +793,7 @@ class MainActivity : BaseActivity() {
     private fun confirmBarcodeDeletion(barcode: SavedBarcode, alarmCount: Int) {
         if (alarmCount > 0) {
             showMessage(
-                "This barcode is used by an alarm. Change that alarm's barcode or delete the alarm first."
+                "This barcode is used by an alarm or timer. Change its barcode selection or delete its preset first."
             )
             return
         }

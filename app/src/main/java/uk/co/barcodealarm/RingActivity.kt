@@ -25,7 +25,9 @@ class RingActivity : BaseActivity() {
     private fun getActiveAlarm(): Alarm? {
         val requested = intent.getIntExtra("occurrence", -1)
         return if (requested != -1) store.getAlarms().find { it.id == requested }
-        else store.getAlarms().firstOrNull()
+        else
+            store.getAlarms().firstOrNull { OccurrenceStore(this).get(it.id)?.audible == true }
+                ?: store.getAlarms().firstOrNull()
     }
 
     private val countdownUpdate =
@@ -120,7 +122,10 @@ class RingActivity : BaseActivity() {
             } else finish()
             return
         }
-        val title = if (isMathsVisible) "Stay with it" else "Time to get up"
+        val isTimer = OccurrenceStore(this).get(alarm.id)?.source == OccurrenceSource.TIMER
+        val title =
+            if (isMathsVisible) "Stay with it"
+            else if (isTimer) "Timer finished" else "Time to get up"
         val subtitle =
             if (isMathsVisible) "Five minutes. Fifteen correct answers."
             else "Your morning starts with a small step."
@@ -129,7 +134,11 @@ class RingActivity : BaseActivity() {
         if (Navigation.ringingBack(isMathsVisible) == BackDestination.RINGING) {
             setBackAction { returnToRinging() }
         }
-        val timeHeading = addText("%02d:%02d".format(alarm.hour, alarm.minute), 64f)
+        val timeHeading =
+            addText(
+                if (isTimer) "Time is up" else "%02d:%02d".format(alarm.hour, alarm.minute),
+                if (isTimer) 36f else 64f,
+            )
         timeHeading.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
         addSpace(20)
         if (isMathsVisible) addMathsChallenge(alarm) else addBarcodeDismissal(alarm)
@@ -247,7 +256,13 @@ class RingActivity : BaseActivity() {
     private fun finishCurrentOccurrence() {
         stopService(Intent(this, RingService::class.java))
         RingService.isMathsVisible = false
-        val remaining = store.getAlarms().firstOrNull()
+        val returnToTimers =
+            OccurrenceStore(this).get(intent.getIntExtra("occurrence", -1))?.source ==
+                OccurrenceSource.TIMER
+        val candidates = store.getAlarms()
+        val remaining =
+            candidates.firstOrNull { OccurrenceStore(this).get(it.id)?.audible == true }
+                ?: candidates.firstOrNull()
         if (remaining != null) {
             intent = Intent(this, RingActivity::class.java).putExtra("occurrence", remaining.id)
             // Simultaneous occurrences each require their own authorised dismissal.
@@ -256,7 +271,12 @@ class RingActivity : BaseActivity() {
             isMathsVisible = false
             showAlarmPage()
         } else {
-            startActivity(Intent(this, MainActivity::class.java))
+            startActivity(
+                Intent(
+                    this,
+                    if (returnToTimers) TimerActivity::class.java else MainActivity::class.java,
+                )
+            )
             finish()
         }
     }

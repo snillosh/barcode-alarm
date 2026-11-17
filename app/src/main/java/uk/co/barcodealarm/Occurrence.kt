@@ -1,7 +1,14 @@
 package uk.co.barcodealarm
 
 /** Durable state, independent of an Activity and of subsequent edits to the definition. */
+enum class OccurrenceSource {
+    ALARM,
+    TIMER,
+}
+
 enum class OccurrenceStage {
+    COUNTDOWN,
+    CANCELLED,
     INITIAL,
     SECOND_WAIT,
     SECOND_READY,
@@ -27,7 +34,22 @@ data class Occurrence(
     val resumeStage: OccurrenceStage = OccurrenceStage.INITIAL,
     val fullVolume: Boolean = false,
     val snoozeAt: Long = 0,
+    val source: OccurrenceSource = OccurrenceSource.ALARM,
+    val timerStartedAt: Long = 0,
+    val timerStartedElapsed: Long = 0,
+    val timerExpiresAt: Long = 0,
+    val timerExpiresElapsed: Long = 0,
+    val timerDurationMillis: Long = 0,
+    val reminderMinutes: Int = 0,
+    val reminderIndex: Int = 0,
+    val timerBootCount: Int = -1,
 ) {
+    fun belongsTo(source: OccurrenceSource, definitionId: Int) =
+        this.source == source && this.definitionId == definitionId
+
+    val terminal
+        get() = stage == OccurrenceStage.COMPLETED || stage == OccurrenceStage.CANCELLED
+
     val audible
         get() =
             stage in
@@ -100,7 +122,11 @@ object OccurrenceRules {
 
     fun dismiss(occurrence: Occurrence, now: Long): Occurrence {
         if (!occurrence.active) return occurrence
-        if (!occurrence.snapshot.verificationEnabled || occurrence.verificationConsumed)
+        if (
+            occurrence.source == OccurrenceSource.TIMER ||
+                !occurrence.snapshot.verificationEnabled ||
+                occurrence.verificationConsumed
+        )
             return occurrence.copy(stage = OccurrenceStage.COMPLETED)
         val due = now + occurrence.snapshot.verificationDelayMinutes * 60_000L
         return occurrence.copy(
@@ -111,8 +137,10 @@ object OccurrenceRules {
         )
     }
 
-    fun event(occurrence: Occurrence, event: String, now: Long): Occurrence =
+    fun event(occurrence: Occurrence, event: String, now: Long, elapsed: Long = 0): Occurrence =
         when {
+            occurrence.stage == OccurrenceStage.COUNTDOWN ->
+                TimerRules.event(occurrence, event, now, elapsed)
             event == "ready" &&
                 occurrence.stage == OccurrenceStage.SECOND_WAIT &&
                 now >= occurrence.eligibleAt ->
@@ -179,6 +207,7 @@ object OccurrenceRules {
 
     fun deadlines(occurrence: Occurrence): Map<String, Long> =
         when (occurrence.stage) {
+            OccurrenceStage.COUNTDOWN -> TimerRules.deadlines(occurrence)
             OccurrenceStage.SECOND_WAIT ->
                 mapOf("ready" to occurrence.eligibleAt, "timeout" to occurrence.deadlineAt)
             OccurrenceStage.SECOND_READY -> mapOf("timeout" to occurrence.deadlineAt)

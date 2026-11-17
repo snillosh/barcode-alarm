@@ -356,3 +356,76 @@ scanner packaging checks pass. Isolated emulator checks covered trimmed label ed
 independent disabled duplicates, enablement/countdown refresh, automatic countdown expiry,
 permission-denied scheduling, and snapshot labels on ringing/maths/verification screens and
 notifications. Physical GrapheneOS presentation checks remain in the checklist above.
+
+## Reusable barcode timers (0.10.0)
+
+Use the **Timers** tab beside **Alarms**. Save a label, a duration from 1 second to 7 days,
+optional first/second barcodes and scan interval, an alarm sound, and optional **Remind me
+every N minutes** chimes. Labels, saved barcode references, sound selection, maths fallback,
+vibration and the global gradual-volume settings follow the existing alarm conventions.
+There is no timer wake-up verification or countdown pause/resume.
+
+Each preset supports one outstanding run; different presets can run simultaneously. Start
+creates a new globally unique occurrence and a configuration snapshot. Editing a preset
+changes its next run, including when a previous run is active. The list shows ready, running,
+ringing, waiting/ready for the second barcode, snoozed, completed and cancelled states. A
+completed or cancelled preset can be started again with a fresh occurrence and full duration.
+The visible countdown refreshes once a second, without a countdown foreground service.
+
+Expiration uses the existing exact alarm-clock delivery and shared ringing queue, service,
+scanner and maths screen. Newly expired timers join behind occurrences already ringing;
+all require their own dismissal, with one audio player. Timer origin and preset IDs are scoped
+separately from clock-time alarm definitions. Timers never change repeating alarm schedules.
+After the first barcode, silence, scan eligibility, the five-minute completion window and
+full-volume escalation all use the existing occurrence workflow. Maths dismisses the entire
+run; ordinary Cancel is unavailable once time is up, even if Android's broadcast arrives late.
+
+Interval reminders use a separate **Timer interval reminders** notification channel and its
+user-controlled notification sound. Only the next reminder is registered at a time, plus an
+independent expiration event. There is no chime at expiration, no acknowledgment, scanner or
+full-screen reminder. Android can delay reminder chimes in idle/Doze; late reminders do not
+replay a backlog. Reminder quotas cannot delay the alarm-clock expiration. Notification
+permission or a muted reminder channel can silence chimes without disabling final ringing.
+
+Cancel before expiration cancels the expiration, reminder and associated notification while
+retaining the preset. Deleting a preset also cancels its active countdown. **Ringing, snoozed
+or partially dismissed runs must be dismissed before the preset can be deleted.** Barcode
+library deletion also checks timer references; deleting a preset does not delete shared codes
+or audio. One completed/cancelled result per preset is retained until its next run.
+
+Within a boot, remaining time uses elapsed realtime, so changing the wall clock does not
+restart or shorten the countdown. Durable wall deadlines and boot identity support recovery.
+After reboot and first unlock, future timers retain the remaining wall-clock time; overdue
+countdowns ring once through an immediate exact callback. Missed reminder chimes are skipped.
+Already-ringing runs follow the existing recovery policy and resume playback on app open.
+Direct Boot is not implemented. Power-off, force-stop and revoked exact-alarm access retain
+Android's existing delivery limitations. Timers show permission diagnostics; granting exact
+access restores supported pending events.
+
+### Pixel 7 Pro / GrapheneOS timer checklist
+
+- Create/edit/reopen a preset with a label, hours/minutes/seconds, custom sound, two codes and
+  reminders; rotate or recreate the editor and confirm unsaved controls survive.
+- Start two different short presets, leave Timers, lock/background the phone and verify both
+  expire. Check a normal alarm can ring concurrently, with separate dismissals and one player.
+- Cancel a running countdown and confirm it never rings. Restart it and confirm the full
+  duration returns. At/after expiration, verify Cancel/Delete cannot bypass barcode dismissal.
+- Try no code, wrong/correct single code, two codes with interval 0 and 1 minute, second-stage
+  ready notification, and the five-minute full-volume escalation retaining the second stage.
+- Complete maths before/after the first scan; check progress and attenuation, silent waiting,
+  snooze interaction and absence of wake-up verification.
+- Try a 3-minute preset with 1-minute reminders: chimes at minutes 1 and 2, only full ringing
+  at minute 3. Mute the channel, deny notification access, and check expiration still rings.
+- Edit a running preset and verify its snapshot is unchanged. Delete a countdown preset and
+  confirm all events disappear. Delete an unrelated alarm and verify timers continue.
+- Background and kill the process normally, then reopen: remaining time must not reset.
+  Reboot/unlock with future and overdue runs, check the documented recovery policy, change
+  the wall clock/time zone, and confirm no duplicate ringing or backlog of reminder chimes.
+
+Validation for 0.10.0: **221 JVM unit tests**, debug APK assembly, lint (no errors), and scanner
+packaging checks pass. Isolated Android emulator checks covered native preset creation/editing,
+active snapshot isolation, cancellation/deletion, background expiry, separate dismissal of two
+simultaneous timers, reminder notifications without playback, alarm/timer ID isolation, normal
+process death, actual reboot/unlock deadline restoration and overdue ringing. Camera scanning,
+physical audio, lock-screen policy and overnight delivery on GrapheneOS still require the
+physical checklist above.

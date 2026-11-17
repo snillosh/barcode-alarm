@@ -309,3 +309,30 @@ on failure. See README for downloads and debug signing/installation behavior.
 
 The user's standing workflow is recorded in `AGENTS.md`: complete relevant checks, commit,
 and push completed code changes using the SSH origin.
+
+## Timer presets and shared occurrences (0.10.0)
+
+`TimerPreset` stores duration, reminder minutes (zero means off) and an Alarm configuration
+record, reusing its barcode/sound/label fields. `TimerRules` normalizes away alarm execution,
+repeats and verification, and supplies pure preset mutations, countdown/reminder transitions,
+clock calculations and recovery. `TimerStore`/`TimerJsonCodec` persist presets independently;
+`TimerActivity` is a native top-level list/editor with a visible-only countdown callback.
+
+`Occurrence` now has an ALARM/TIMER source, COUNTDOWN/CANCELLED stages and optional timer timing
+metadata. Old JSON defaults to ALARM. The shared store reserves all occurrence IDs and keeps
+only the latest terminal timer result per preset. Newly expired timers append to the existing
+ringing queue; active stores still filter audible/silent dismissal stages and ignore countdowns.
+Source-scoped definition matching prevents alarm deletion from cancelling a timer with the
+same numeric preset ID. Library deletion checks both preset and occurrence references.
+
+`OccurrenceManager` registers exact expiration via the existing alarm-clock mechanism,
+translating monotonic remaining time to the next wall trigger. The next reminder alone uses
+an elapsed-realtime exact idle callback. Its persisted index advances before posting an
+ordinary notification, making duplicate delivery harmless. Expiration is independent of
+reminder delivery and Doze reminder quotas. Boot-count metadata detects an invalid elapsed
+clock even if app opening precedes boot restoration; overdue runs ring once after unlock.
+Only the existing RingService, RingActivity, scanner and maths implementation handle expiry.
+
+All transition calculations accept supplied wall/elapsed clocks. Timer JVM tests cover
+preset CRUD and codecs, validation, independent runs, cancellation/deadline races, reminders,
+shared barcode/maths dismissal, source identity and reboot/clock recovery without sleeps.

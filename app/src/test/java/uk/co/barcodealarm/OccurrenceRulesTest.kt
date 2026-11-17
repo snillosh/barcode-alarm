@@ -354,7 +354,10 @@ class OccurrenceRulesTest {
 
     @Test
     fun everyPendingStageSurvivesProcessRecreationWithItsOwnDeadlines() {
-        for (stage in OccurrenceStage.values().filter { it != OccurrenceStage.COMPLETED }) {
+        for (stage in
+            OccurrenceStage.values().filter {
+                it != OccurrenceStage.COMPLETED && it != OccurrenceStage.CANCELLED
+            }) {
             val saved =
                 firstScan()
                     .copy(

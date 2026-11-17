@@ -15,14 +15,15 @@ class OccurrenceStore(private val context: Context) {
             else alarm.occurrenceScheduledAtMillis
         all()
             .find {
-                it.definitionId == alarm.id && it.snapshot.occurrenceScheduledAtMillis == sourceTime
+                it.source == OccurrenceSource.ALARM &&
+                    it.definitionId == alarm.id &&
+                    it.snapshot.occurrenceScheduledAtMillis == sourceTime
             }
             ?.let {
                 return it
             }
         val codes = AlarmStore(context).getBarcodes()
-        val id = prefs.getInt("next", 1_000_000)
-        check(prefs.edit().putInt("next", id + 1).commit())
+        val id = nextId()
         val occurrence =
             Occurrence(
                 id = id,
@@ -43,10 +44,44 @@ class OccurrenceStore(private val context: Context) {
         return occurrence
     }
 
+    fun nextId(): Int {
+        val id = prefs.getInt("next", 1_000_000)
+        check(id < Int.MAX_VALUE && prefs.edit().putInt("next", id + 1).commit()) {
+            "Could not reserve occurrence ID"
+        }
+        return id
+    }
+
+    fun remove(id: Int) {
+        check(
+            prefs
+                .edit()
+                .putString("data", OccurrenceJsonCodec.encode(all().filterNot { it.id == id }))
+                .commit()
+        )
+    }
+
     fun save(value: Occurrence) {
-        val values = all().toMutableList()
+        val values =
+            all()
+                .filterNot {
+                    value.source == OccurrenceSource.TIMER &&
+                        it.source == value.source &&
+                        it.definitionId == value.definitionId &&
+                        it.id != value.id &&
+                        it.terminal
+                }
+                .toMutableList()
         val index = values.indexOfFirst { it.id == value.id }
-        if (index < 0) values.add(value) else values[index] = value
+        if (
+            index >= 0 &&
+                values[index].stage == OccurrenceStage.COUNTDOWN &&
+                value.stage == OccurrenceStage.INITIAL
+        ) {
+            // Append newly expired timers behind occurrences already ringing.
+            values.removeAt(index)
+            values.add(value)
+        } else if (index < 0) values.add(value) else values[index] = value
         check(prefs.edit().putString("data", OccurrenceJsonCodec.encode(values)).commit()) {
             "Could not persist occurrence"
         }

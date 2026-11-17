@@ -76,7 +76,9 @@ class AlarmStore(private val context: Context) {
             BarcodeLibrary.delete(
                 getBarcodes(),
                 id,
-                getAlarms() + OccurrenceStore(context).all().map { it.snapshot },
+                getAlarms() +
+                    OccurrenceStore(context).all().filterNot { it.terminal }.map { it.snapshot } +
+                    TimerStore(context).all().map { it.configuration },
             )
         writeBarcodes(remainingBarcodes)
     }

@@ -60,7 +60,7 @@ object BarcodeLibrary {
         val isUsedByAlarm =
             alarms.any { alarm -> alarm.barcodeId == id || alarm.secondBarcodeId == id }
         require(!isUsedByAlarm) {
-            "This barcode is used by an alarm. Choose another barcode for that alarm or delete the alarm first."
+            "This barcode is used by an alarm or timer. Choose another barcode there or delete its preset first."
         }
         return barcodes.filterNot { barcode -> barcode.id == id }
     }

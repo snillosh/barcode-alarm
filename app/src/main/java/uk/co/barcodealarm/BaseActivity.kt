@@ -2,6 +2,7 @@ package uk.co.barcodealarm
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -298,6 +299,23 @@ open class BaseActivity : Activity() {
             layout.marginEnd = toPixels(3)
         }
         return layout
+    }
+
+    protected fun addTopLevelTabs(timersSelected: Boolean) {
+        addButtonRow {
+            addButton("Alarms", primary = !timersSelected) {
+                if (timersSelected) {
+                    startActivity(Intent(this, MainActivity::class.java))
+                    finish()
+                }
+            }
+            addButton("Timers", primary = timersSelected) {
+                if (!timersSelected) {
+                    startActivity(Intent(this, TimerActivity::class.java))
+                    finish()
+                }
+            }
+        }
     }
 
     private var currentMessage: Toast? = null

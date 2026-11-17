@@ -22,6 +22,15 @@ object OccurrenceJsonCodec {
                 resumeStage = OccurrenceStage.valueOf(json.optString("resume", "INITIAL")),
                 fullVolume = json.optBoolean("full"),
                 snoozeAt = json.optLong("snoozeAt"),
+                source = OccurrenceSource.valueOf(json.optString("source", "ALARM")),
+                timerStartedAt = json.optLong("timerStartedAt"),
+                timerStartedElapsed = json.optLong("timerStartedElapsed"),
+                timerExpiresAt = json.optLong("timerExpiresAt"),
+                timerExpiresElapsed = json.optLong("timerExpiresElapsed"),
+                timerDurationMillis = json.optLong("timerDurationMillis"),
+                reminderMinutes = json.optInt("reminderMinutes"),
+                reminderIndex = json.optInt("reminderIndex"),
+                timerBootCount = json.optInt("timerBootCount", -1),
             )
         }
     }
@@ -29,7 +38,7 @@ object OccurrenceJsonCodec {
     fun encode(values: List<Occurrence>): String {
         val array = JSONArray()
         values
-            .filter { it.stage != OccurrenceStage.COMPLETED }
+            .filter { !it.terminal || it.source == OccurrenceSource.TIMER }
             .forEach { occurrence ->
                 array.put(
                     JSONObject().apply {
@@ -45,6 +54,15 @@ object OccurrenceJsonCodec {
                         put("resume", occurrence.resumeStage.name)
                         put("full", occurrence.fullVolume)
                         put("snoozeAt", occurrence.snoozeAt)
+                        put("source", occurrence.source.name)
+                        put("timerStartedAt", occurrence.timerStartedAt)
+                        put("timerStartedElapsed", occurrence.timerStartedElapsed)
+                        put("timerExpiresAt", occurrence.timerExpiresAt)
+                        put("timerExpiresElapsed", occurrence.timerExpiresElapsed)
+                        put("timerDurationMillis", occurrence.timerDurationMillis)
+                        put("reminderMinutes", occurrence.reminderMinutes)
+                        put("reminderIndex", occurrence.reminderIndex)
+                        put("timerBootCount", occurrence.timerBootCount)
                     }
                 )
             }
