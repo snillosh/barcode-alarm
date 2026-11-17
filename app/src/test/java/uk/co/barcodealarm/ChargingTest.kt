@@ -80,6 +80,10 @@ class ChargingTest {
         val events = events()
         assertEquals(2, events.size)
         assertEquals("phone.power.connected", events[0].getString("eventType"))
+        assertEquals(
+            OccurrenceStore(context).installationId(),
+            events[0].getString("installationId"),
+        )
         assertEquals("sleep.bedtime.estimated", events[1].getString("eventType"))
         val estimate = events[1].getJSONObject("payload")
         assertEquals(events[0].getString("eventId"), estimate.getString("sourceConnectionEventId"))

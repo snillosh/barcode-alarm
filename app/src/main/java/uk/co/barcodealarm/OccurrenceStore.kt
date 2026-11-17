@@ -12,6 +12,12 @@ class OccurrenceStore(private val context: Context) : CompletionStorage {
 
     private val prefs = context.getSharedPreferences("occurrences", Context.MODE_PRIVATE)
 
+    fun installationId(): String = synchronized(lock) {
+        prefs.getString("wellness_installation", null) ?: UUID.randomUUID().toString().also {
+            check(prefs.edit().putString("wellness_installation", it).commit())
+        }
+    }
+
     fun all(): List<Occurrence> =
         synchronized(lock) { OccurrenceJsonCodec.decode(prefs.getString("data", "[]") ?: "[]") }
 

@@ -12,6 +12,9 @@ import org.json.JSONObject
 
 /** Charging capture/queue is independent of the alarm transition transaction. */
 class ChargingStore(context: Context) : SQLiteOpenHelper(context, "charging.db", null, 1) {
+    // Resolve outside SQLite transactions: sync acknowledgements take the occurrence lock first.
+    private val appInstallation = OccurrenceStore(context).installationId()
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE state (slot INTEGER PRIMARY KEY, body TEXT NOT NULL)")
         db.execSQL(
@@ -20,7 +23,6 @@ class ChargingStore(context: Context) : SQLiteOpenHelper(context, "charging.db",
         db.execSQL(
             "CREATE TABLE delivery (id TEXT NOT NULL, server TEXT NOT NULL, rejected INTEGER NOT NULL, PRIMARY KEY(id,server))"
         )
-        db.execSQL("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
@@ -42,23 +44,7 @@ class ChargingStore(context: Context) : SQLiteOpenHelper(context, "charging.db",
         )
     }
 
-    private fun installation(): String {
-        writableDatabase.insertWithOnConflict(
-            "metadata",
-            null,
-            ContentValues().apply {
-                put("key", "installation")
-                put("value", UUID.randomUUID().toString())
-            },
-            SQLiteDatabase.CONFLICT_IGNORE,
-        )
-        return readableDatabase
-            .rawQuery("SELECT value FROM metadata WHERE key='installation'", null)
-            .use {
-                it.moveToFirst()
-                it.getString(0)
-            }
-    }
+    private fun installation(): String = appInstallation
 
     fun begin(window: BedtimeWindow, now: Long, powered: Boolean, elapsed: Long) {
         // Every process restart breaks continuity. Never manufacture an edge from a snapshot.
