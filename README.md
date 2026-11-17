@@ -1,6 +1,6 @@
 # Barcode Alarm
 
-Minimal offline Kotlin Android alarm for Pixel 7 Pro / GrapheneOS, with one-shot or selected-day repeats and five-minute snooze. Native widgets, AlarmManager.setAlarmClock, offline ZXing, local preferences. No accounts, analytics, Internet permission or Google Play Services. Original requirements: [BRIEF.md](BRIEF.md).
+Minimal offline Kotlin Android alarm for Pixel 7 Pro / GrapheneOS, with one-shot or selected-day repeats and five-minute snooze. Native widgets, AlarmManager.setAlarmClock, offline ZXing, local preferences. No accounts, analytics or Google Play Services. Optional Wellness Sync adds Internet access; alarms remain offline. Original requirements: [BRIEF.md](BRIEF.md).
 
 ## Build and install
 
@@ -429,3 +429,12 @@ simultaneous timers, reminder notifications without playback, alarm/timer ID iso
 process death, actual reboot/unlock deadline restoration and overdue ringing. Camera scanning,
 physical audio, lock-screen policy and overnight delivery on GrapheneOS still require the
 physical checklist above.
+
+
+## Optional Wellness Sync (0.11.0)
+
+Open **Settings & diagnostics → Wellness Sync** for the editable HTTPS server URL,
+securely stored API key, enable switch, asynchronous connection test, pending count,
+last successful sync and manual retry. Existing local alarm/timer storage remains
+unchanged; durable local completion history uploads independently in the background.
+Sync is disabled by default. Read [setup, capture/retry behaviour and device checks](WELLNESS_SYNC.md).

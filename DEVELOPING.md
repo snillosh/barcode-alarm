@@ -336,3 +336,27 @@ Only the existing RingService, RingActivity, scanner and maths implementation ha
 All transition calculations accept supplied wall/elapsed clocks. Timer JVM tests cover
 preset CRUD and codecs, validation, independent runs, cancellation/deadline races, reminders,
 shared barcode/maths dismissal, source identity and reboot/clock recovery without sleeps.
+
+
+## Wellness history and optional sync
+
+`CompletionTransition` preserves the save/reconcile/rollback order. `OccurrenceStore`
+atomically commits terminal state with a short-lived history recovery marker in the
+same preferences file; only settled `WellnessRecord`s can upload. `cancelDefinition`
+intentionally bypasses completion capture. Preserve that distinction and the old
+JSON keys. A shared lock protects worker acknowledgements and occurrence mutation.
+`WellnessEvent` serializes only the versioned public contract, never local snapshots.
+
+`WellnessSynchronizer` handles delivery outcomes, with an injected transport/credential
+reader in tests. The production `WellnessSyncWorker` uses platform HTTPS and Keystore,
+unique constrained WorkManager jobs and a process-wide network lock. No token enters
+Worker Data. `BarcodeAlarmApplication` supplies on-demand WorkManager configuration;
+the default initializer is removed so an alarm receiver's startup does not initialize
+the work database. Enqueue setup after completion runs off the dismissal thread.
+
+`WellnessSyncActivity` uses the existing native controls and does not store typed keys
+in view state. Catch security/network failures with fixed, non-sensitive messages;
+never send their raw exceptions to `runUiAction`/diagnostic logging. Keep the manifest
+cleartext ban and credential backup/device-transfer exclusions. Test-only Robolectric
+and WorkManager libraries do not become application services. See WELLNESS_SYNC.md
+for retention, capacity, recovery semantics and the physical-device checklist.

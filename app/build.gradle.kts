@@ -7,9 +7,10 @@ android {
         applicationId = "uk.co.barcodealarm"
         minSdk = 28
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.10.0"
+        versionCode = 14
+        versionName = "0.11.0"
     }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -17,6 +18,9 @@ android {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime:2.11.0")
+    testImplementation("androidx.work:work-testing:2.11.0")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     // ZXing references ContextCompat and ActivityCompat but omits Core from its POM.
     implementation("androidx.core:core:1.13.1")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

@@ -115,20 +115,26 @@ class OccurrenceManager(private val context: Context) {
         notifications.notify(occurrence.id, notification.build())
     }
 
-    fun update(previous: Occurrence, next: Occurrence) {
-        if (previous == next) return
-        store.save(next)
-        try {
-            reconcile(next)
-        } catch (exception: Exception) {
-            store.save(previous)
+    fun update(previous: Occurrence, next: Occurrence) =
+        synchronized(OccurrenceStore.lock) {
+            if (previous == next) return@synchronized
             try {
-                reconcile(previous)
-            } catch (_: Exception) {}
-            AlarmStore(context).log("Occurrence ${next.id} scheduling failed: $exception")
-            throw exception
+                CompletionTransition.apply(previous, next, store, ::reconcile)
+            } catch (exception: Exception) {
+                AlarmStore(context).log("Occurrence ${next.id} scheduling failed")
+                throw exception
+            }
+            if (next.stage == OccurrenceStage.COMPLETED && next.source == OccurrenceSource.ALARM)
+                WellnessSync.requestSafely(context)
         }
-    }
+
+    fun recoverCompletions() =
+        synchronized(OccurrenceStore.lock) {
+            for (record in store.history().filter { it.recovery != null }) {
+                reconcile(checkNotNull(record.recovery))
+                store.settleCompletion(record.event.eventId)
+            }
+        }
 
     fun scan(id: Int, value: String, format: String) {
         val occurrence = store.get(id) ?: return
@@ -342,6 +348,11 @@ class OccurrenceManager(private val context: Context) {
     }
 
     fun restore(isBoot: Boolean) {
+        try {
+            recoverCompletions()
+        } catch (_: Exception) {
+            store.reportCaptureFailure()
+        }
         store.all().forEach { old ->
             var occurrence = old
             if (isBoot) {

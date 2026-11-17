@@ -35,10 +35,10 @@ object OccurrenceJsonCodec {
         }
     }
 
-    fun encode(values: List<Occurrence>): String {
+    fun encode(values: List<Occurrence>, includeTerminal: Boolean = false): String {
         val array = JSONArray()
         values
-            .filter { !it.terminal || it.source == OccurrenceSource.TIMER }
+            .filter { includeTerminal || !it.terminal || it.source == OccurrenceSource.TIMER }
             .forEach { occurrence ->
                 array.put(
                     JSONObject().apply {

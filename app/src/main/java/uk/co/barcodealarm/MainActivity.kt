@@ -87,6 +87,9 @@ class MainActivity : BaseActivity() {
             OccurrenceManager(this).migrateLegacy()
             OccurrenceManager(this).restore(false)
         }
+        try {
+            WellnessSync.maintain(this)
+        } catch (_: Exception) {}
         restorePageState(savedInstanceState)
         when (currentPage) {
             Page.HOME -> showHomePage()
@@ -910,6 +913,8 @@ class MainActivity : BaseActivity() {
         setBackAction { navigateBack() }
         addAppearanceSettings()
         addPlaybackSettings()
+        addCaption("WELLNESS SYNC")
+        addButton("Wellness Sync") { startActivity(Intent(this, WellnessSyncActivity::class.java)) }
         addCaption("PERMISSIONS & ACCESS")
         addPermissionSettings()
         addCaption("BATTERY & DEVICE")
