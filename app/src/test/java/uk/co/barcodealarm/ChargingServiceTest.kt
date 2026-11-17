@@ -77,6 +77,29 @@ class ChargingServiceTest {
     }
 
     @Test
+    fun clockRecoveryKeepsActiveReceiverAndSuppressesEstimate() {
+        val controller = Robolectric.buildService(ChargingTrackingService::class.java).create()
+        try {
+            val service = controller.get()
+            assertEquals(Service.START_STICKY, service.onStartCommand(Intent(), 0, 1))
+            ChargingTracking.clock =
+                Clock.fixed(Instant.parse("2026-11-17T21:00:00Z"), ZoneOffset.UTC)
+            ChargingTracking.restore(context)
+            assertSame(service, ChargingTrackingService.active)
+            context.sendBroadcast(Intent(Intent.ACTION_POWER_CONNECTED))
+            shadowOf(Looper.getMainLooper()).idle()
+            ChargingStore(context).use {
+                assertEquals(1, it.pending(WellnessConnection.DEFAULT_SERVER).size)
+                val end = Instant.parse("2026-11-18T03:00:00Z").toEpochMilli()
+                it.finish(end, SystemClock.elapsedRealtime() + 6 * 3600000, true)
+                assertEquals(1, it.pending(WellnessConnection.DEFAULT_SERVER).size)
+            }
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
     fun reschedulingKeepsOneBoundaryAndDisablingCancelsIt() {
         ChargingTracking.clock = Clock.fixed(Instant.parse("2026-11-17T12:00:00Z"), ZoneOffset.UTC)
         ChargingTracking.maintain(context)

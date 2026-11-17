@@ -101,7 +101,7 @@ object ChargingTracking {
     fun restore(context: Context) {
         try {
             ChargingStore(context).use { it.invalidate() }
-            context.stopService(Intent(context, ChargingTrackingService::class.java))
+            ChargingTrackingService.active?.resetWindow()
             maintain(context)
         } catch (_: Exception) {
             status(context, "Tracking needs attention; open charging settings")
@@ -257,6 +257,24 @@ class ChargingTrackingService : Service() {
             ChargingTracking.status(this, "Tracking interrupted; no estimate for this night")
             stopSelf()
             return START_NOT_STICKY
+        }
+    }
+
+    fun resetWindow() {
+        val now = ChargingTracking.clock.millis()
+        val window = ChargingRules.window(now, ZoneId.systemDefault())
+        if (!window.contains(now)) {
+            stopSelf()
+            return
+        }
+        ChargingStore(this).use {
+            it.begin(
+                window,
+                now,
+                battery().getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0,
+                SystemClock.elapsedRealtime(),
+            )
+            it.invalidate()
         }
     }
 
