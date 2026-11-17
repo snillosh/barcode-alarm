@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -15,6 +16,11 @@
         <provider android:name="androidx.startup.InitializationProvider" android:authorities="${applicationId}.androidx-startup" android:exported="false" tools:node="merge">
             <meta-data android:name="androidx.work.WorkManagerInitializer" tools:node="remove"/>
         </provider>
+        <activity android:name=".ChargingSettingsActivity" android:exported="false"/>
+        <receiver android:name=".ChargingBoundaryReceiver" android:exported="false"/>
+        <service android:name=".ChargingTrackingService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled nightly charging connection observation for bedtime estimates, 20:00 to 03:00, with an ongoing notification"/>
+        </service>
         <activity android:name=".WellnessSyncActivity" android:exported="false"/>
         <!-- The launcher Activity owns normal pages and in-app navigation. -->
         <activity android:enableOnBackInvokedCallback="true" android:name=".MainActivity" android:exported="true">
