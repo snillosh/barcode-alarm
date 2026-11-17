@@ -9,6 +9,7 @@ import java.time.ZonedDateTime
 /** Restore pending deliveries; repeating alarms follow local weekdays after clock/zone changes. */
 class RestoreReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        ChargingTracking.restore(context)
         val store = AlarmStore(context)
         val scheduler = AlarmScheduler(context)
         val now = ZonedDateTime.now()

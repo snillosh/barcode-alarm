@@ -12,7 +12,7 @@ enum class SyncOutcome {
 
 class WellnessSynchronizer(
     private val context: Context,
-    private val request: (String, String, WellnessEvent?) -> WellnessHttpClient.Response =
+    private val request: (String, String, UploadEvent?) -> WellnessHttpClient.Response =
         WellnessHttpClient()::request,
     private val readCredential: () -> String? = WellnessSettings(context)::credential,
     private val stopped: () -> Boolean = { false },
@@ -67,7 +67,37 @@ class WellnessSynchronizer(
             }
             val history = OccurrenceStore(context)
             val records = history.pending(config.serverUrl).take(10)
+            var chargingPending = false
+            val charging = ChargingStore(context)
+            try {
+                for (event in charging.pending(config.serverUrl)) {
+                    if (!current(settings, config, false)) return SyncOutcome.SUCCESS
+                    val response = request(config.serverUrl, credential, event)
+                    if (!current(settings, config, false)) return SyncOutcome.SUCCESS
+                    if (
+                        WellnessConnection.acknowledged(response.code, response.body, event.eventId)
+                    ) {
+                        synchronized(OccurrenceStore.lock) {
+                            if (current(settings, config, false)) {
+                                charging.delivered(event.eventId, config.serverUrl, false)
+                                settings.status(
+                                    config,
+                                    "Synchronised successfully",
+                                    acknowledged = true,
+                                )
+                            }
+                        }
+                    } else if (response.code in setOf(400, 409, 413, 415, 422)) {
+                        charging.delivered(event.eventId, config.serverUrl, true)
+                        settings.status(config, "Charging records rejected; retained for review")
+                    } else return handle(response, settings, config)
+                }
+                chargingPending = charging.pending(config.serverUrl).isNotEmpty()
+            } finally {
+                charging.close()
+            }
             if (records.isEmpty()) {
+                if (chargingPending) return SyncOutcome.RETRY
                 settings.status(config, "No pending records (rejected records need manual retry)")
                 return SyncOutcome.SUCCESS
             }
@@ -105,7 +135,8 @@ class WellnessSynchronizer(
                     settings.status(config, "Some records were rejected and retained for review")
                 } else return handle(response, settings, config)
             }
-            return if (history.pending(config.serverUrl).isNotEmpty()) SyncOutcome.RETRY
+            return if (chargingPending || history.pending(config.serverUrl).isNotEmpty())
+                SyncOutcome.RETRY
             else SyncOutcome.SUCCESS
         } catch (_: Exception) {
             try {

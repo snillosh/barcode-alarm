@@ -6,9 +6,19 @@ import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
 
+interface UploadEvent {
+    val eventId: String
+
+    fun json(): JSONObject
+}
+
+data class ChargingUpload(override val eventId: String, val body: String) : UploadEvent {
+    override fun json(): JSONObject = JSONObject(body)
+}
+
 /** Raw completion only: no barcode, label, URI, or inferred waking time leaves the device. */
 data class WellnessEvent(
-    val eventId: String,
+    override val eventId: String,
     val installationId: String,
     val occurrenceId: Int,
     val definitionId: Int,
@@ -16,8 +26,8 @@ data class WellnessEvent(
     val scheduledAt: Long?,
     val zoneId: String?,
     val offsetSeconds: Int,
-) {
-    fun json(): JSONObject =
+) : UploadEvent {
+    override fun json(): JSONObject =
         JSONObject().apply {
             put("eventId", eventId)
             put("sourceApplication", "barcode-alarm")

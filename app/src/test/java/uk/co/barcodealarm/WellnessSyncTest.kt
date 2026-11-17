@@ -39,10 +39,10 @@ class WellnessSyncTest {
     }
 
     private fun synchronizer(
-        request: (String, String, WellnessEvent?) -> WellnessHttpClient.Response
+        request: (String, String, UploadEvent?) -> WellnessHttpClient.Response
     ) = WellnessSynchronizer(context, request, { "test-only-fake-credential" })
 
-    private fun ack(event: WellnessEvent, code: Int = 201) =
+    private fun ack(event: UploadEvent, code: Int = 201) =
         WellnessHttpClient.Response(
             code,
             """{"eventId":"${event.eventId}","status":"${if (code == 201) "accepted" else "duplicate"}","receivedAt":"2026-11-17T07:00:00Z"}""",

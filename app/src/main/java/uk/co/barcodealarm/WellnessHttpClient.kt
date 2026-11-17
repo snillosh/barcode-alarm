@@ -6,7 +6,7 @@ import javax.net.ssl.HttpsURLConnection
 class WellnessHttpClient {
     data class Response(val code: Int, val body: String, val retryAfterSeconds: Long = 0)
 
-    fun request(server: String, credential: String, event: WellnessEvent? = null): Response {
+    fun request(server: String, credential: String, event: UploadEvent? = null): Response {
         val base = WellnessConnection.normalizeServer(server)
         val path = if (event == null) "/api/v1/connection" else "/api/v1/events"
         val connection = URL(base + path).openConnection() as HttpsURLConnection

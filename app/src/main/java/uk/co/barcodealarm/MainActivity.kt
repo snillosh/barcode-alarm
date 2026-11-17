@@ -90,6 +90,8 @@ class MainActivity : BaseActivity() {
         try {
             WellnessSync.maintain(this)
         } catch (_: Exception) {}
+        try { ChargingTracking.maintain(this) } catch (_: Exception) {}
+        window.decorView.post { if (!OccurrenceStore(this).all().any { it.audible }) ChargingTracking.offerSetup(this) }
         restorePageState(savedInstanceState)
         when (currentPage) {
             Page.HOME -> showHomePage()
@@ -914,6 +916,7 @@ class MainActivity : BaseActivity() {
         addAppearanceSettings()
         addPlaybackSettings()
         addCaption("WELLNESS SYNC")
+        addButton("Bedtime charging · 20:00–03:00") { startActivity(Intent(this, ChargingSettingsActivity::class.java)) }
         addButton("Wellness Sync") { startActivity(Intent(this, WellnessSyncActivity::class.java)) }
         addCaption("PERMISSIONS & ACCESS")
         addPermissionSettings()

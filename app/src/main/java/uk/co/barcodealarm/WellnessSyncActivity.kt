@@ -104,6 +104,7 @@ class WellnessSyncActivity : BaseActivity() {
                 else {
                     settings.manualRetry()
                     OccurrenceStore(this).retryRejected(saved.serverUrl)
+                    ChargingStore(this).use { it.retry(saved.serverUrl) }
                     settings.status(saved, "Sync queued; waiting for network")
                     WellnessSync.maintain(this)
                 }
@@ -154,8 +155,9 @@ class WellnessSyncActivity : BaseActivity() {
             val config = settings.configuration()
             val store = OccurrenceStore(this)
             val history = store.history()
-            val pending = history.count { !it.acknowledgedBy.containsKey(config.serverUrl) }
-            val rejected = history.count { it.rejectedBy.containsKey(config.serverUrl) }
+            val charging = ChargingStore(this).use { it.counts(config.serverUrl) }
+            val pending = history.count { !it.acknowledgedBy.containsKey(config.serverUrl) } + charging.first
+            val rejected = history.count { it.rejectedBy.containsKey(config.serverUrl) } + charging.second
             val success = settings.lastSuccess()
             val time =
                 if (success == 0L) "Never"

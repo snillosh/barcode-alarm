@@ -438,3 +438,7 @@ securely stored API key, enable switch, asynchronous connection test, pending co
 last successful sync and manual retry. Existing local alarm/timer storage remains
 unchanged; durable local completion history uploads independently in the background.
 Sync is disabled by default. Read [setup, capture/retry behaviour and device checks](WELLNESS_SYNC.md).
+
+## Bedtime charging (0.12.0 feature branch)
+
+Optional nightly charging observations and conservative bedtime estimates run from 20:00–03:00 with a silent notification. Open the updated app once for the setup prompt. See [setup, data, background limitations and validation](CHARGING.md). Existing alarms remain independent of tracking and network availability.
