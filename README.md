@@ -1,5 +1,8 @@
 # Barcode Alarm
 
+For a fresh Codex session, start with [AGENTS.md](AGENTS.md) and
+[the agent handoff](HANDOFF.md): system map, current state, code paths, checks and next steps.
+
 Minimal offline Kotlin Android alarm for Pixel 7 Pro / GrapheneOS, with one-shot or selected-day repeats and five-minute snooze. Native widgets, AlarmManager.setAlarmClock, offline ZXing, local preferences. No accounts, analytics or Google Play Services. Optional Wellness Sync adds Internet access; alarms remain offline. Original requirements: [BRIEF.md](BRIEF.md).
 
 ## Build and install
