@@ -360,3 +360,19 @@ never send their raw exceptions to `runUiAction`/diagnostic logging. Keep the ma
 cleartext ban and credential backup/device-transfer exclusions. Test-only Robolectric
 and WorkManager libraries do not become application services. See WELLNESS_SYNC.md
 for retention, capacity, recovery semantics and the physical-device checklist.
+
+## Snooze and timer protection (0.13.0)
+
+`Alarm.canBeSnoozed` is configurable and part of definition and occurrence JSON. Alarm decode
+retains a true legacy default; timer preset and timer occurrence decode pass a false legacy
+default. `Occurrence.canSnooze` is the common UI/engine guard. Snoozed timers are available to
+the dismissal UI while remaining non-audible. `dismissalStage` retains their pre-snooze barcode
+stage, so scanning/maths can finish them without restarting sound or requiring the first code
+again. Clock-time snooze presentation is otherwise unchanged.
+
+`TimerSettings` stores the global 0–60 minute cancellation protection (default 1). Starting a
+run copies it into `timerCancellationLockMinutes`; old occurrence JSON defaults to zero.
+`TimerRules.canCancel` uses the monotonic remaining time with a strict greater-than boundary.
+Both Cancel and preset deletion enforce it, and the visible timer list re-renders when that
+permission changes. Settings edits never rewrite in-progress snapshots. The added tests include
+pure boundary/migration cases and Robolectric persistence, manager and native-view checks.

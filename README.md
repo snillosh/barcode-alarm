@@ -445,3 +445,37 @@ Sync is disabled by default. Read [setup, capture/retry behaviour and device che
 ## Bedtime charging (0.12.0 feature branch)
 
 Optional nightly charging observations and conservative bedtime estimates run from 20:00–03:00 with a silent notification. Open the updated app once for the setup prompt. See [setup, data, background limitations and validation](CHARGING.md). Existing alarms remain independent of tracking and network availability.
+
+## Snooze choices and timer cancellation protection (0.13.0)
+
+Both alarm and timer editors now include **Can be snoozed**. Clock-time alarms default to
+on, including older saved alarms. Timer presets default to off, including older presets
+without an explicit snooze choice. The choice is saved in each run's snapshot; editing a
+preset affects its next run. When off, the ringing screen hides Snooze and the engine also
+rejects snooze requests. A timer may still be configured to allow snooze explicitly.
+
+A snoozed timer now offers **Dismiss snoozed timer** in Timers. Its normal dismissal screen
+works immediately while sound remains paused: use Dismiss for an ordinary timer, scan its
+configured code(s), or complete the existing maths fallback. Second-stage progress is
+preserved. Successful dismissal cancels the snooze callback, so the timer does not ring again.
+This also works for timers that were already snoozed before upgrading.
+
+Under **Settings → Timers**, set **Prevent cancellation during the final N minutes** from
+0–60 minutes. Default: 1 minute; 0 disables protection. Each newly started timer snapshots
+the setting, so changing Settings or editing a preset cannot unlock an existing run. Older
+already-running timers retain their previous cancellation behavior. If the timer's duration
+is shorter than the protection period, it is protected from the start.
+
+Before the protected period, Cancel and preset deletion work as before. At the exact boundary,
+both are blocked, including stale button presses. The list updates the controls automatically.
+When the timer expires, finish it through its configured dismissal method. This protection
+does not change clock-time alarms, interval reminders, maths requirements, Wellness Sync,
+charging capture, or repeating schedules.
+
+Validation: all **293 JVM/Robolectric tests**, `testDebugUnitTest lintDebug assembleDebug
+assembleRelease`, and the scanner APK packaging check pass. UI tests cover both editor
+checkboxes, alarm-editor recreation, Settings persistence, the live cancellation boundary,
+snooze-button visibility and immediate silent dismissal. Device acceptance is still required:
+try a 10-minute timer with 2-minute protection, check Cancel/Delete before and after minute 8,
+verify timer snooze is off by default, enable snooze and dismiss before its wake-up time using
+normal/barcode/maths methods, and check alarm snooze both enabled and disabled.

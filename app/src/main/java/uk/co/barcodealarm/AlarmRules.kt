@@ -59,6 +59,7 @@ object AlarmRules {
 
     fun snooze(alarm: Alarm, nowMillis: Long): Alarm {
         check(alarm.isRinging) { "Only a ringing alarm can be snoozed" }
+        check(alarm.canBeSnoozed) { "Snooze is disabled for this alarm" }
         // Snooze delays this occurrence, even onto an unselected day. Its original time,
         // repeat days and already-earned maths progress are unchanged.
         return alarm.copy(

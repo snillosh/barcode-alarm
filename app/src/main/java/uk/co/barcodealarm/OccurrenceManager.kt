@@ -141,7 +141,8 @@ class OccurrenceManager(private val context: Context) {
         val wallRemaining = occurrence.eligibleAt - System.currentTimeMillis()
         val elapsedRemaining = occurrence.eligibleElapsed - SystemClock.elapsedRealtime()
         if (
-            occurrence.stage in setOf(OccurrenceStage.SECOND_WAIT, OccurrenceStage.SECOND_READY) &&
+            occurrence.dismissalStage in
+                setOf(OccurrenceStage.SECOND_WAIT, OccurrenceStage.SECOND_READY) &&
                 maxOf(wallRemaining, elapsedRemaining) > 0
         ) {
             error(
@@ -172,6 +173,7 @@ class OccurrenceManager(private val context: Context) {
 
     fun snooze(id: Int) {
         val occurrence = store.get(id) ?: return
+        check(occurrence.canSnooze) { "Snooze is disabled for this alarm or timer" }
         val next = OccurrenceRules.event(occurrence, "snooze", System.currentTimeMillis())
         try {
             update(occurrence, next)
@@ -239,8 +241,9 @@ class OccurrenceManager(private val context: Context) {
             )
         val identified =
             occurrence.copy(
+                timerCancellationLockMinutes = TimerSettings(context).cancellationLockMinutes(),
                 timerBootCount =
-                    Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+                    Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1),
             )
         store.save(identified)
         try {
@@ -263,10 +266,15 @@ class OccurrenceManager(private val context: Context) {
             // Android has not delivered the expiration broadcast yet.
             if (
                 occurrence.source == OccurrenceSource.TIMER &&
-                    occurrence.stage == OccurrenceStage.COUNTDOWN
+                    occurrence.stage == OccurrenceStage.COUNTDOWN &&
+                    TimerRules.remaining(
+                        occurrence,
+                        System.currentTimeMillis(),
+                        SystemClock.elapsedRealtime(),
+                    ) == 0L
             )
                 event(id, "expire", occurrence.timerExpiresAt)
-            error("This timer has expired. Use its dismissal screen.")
+            error("This timer is protected against cancellation. Dismiss it after it rings.")
         }
         update(occurrence, cancelled)
     }
@@ -276,15 +284,14 @@ class OccurrenceManager(private val context: Context) {
         check(
             related.none {
                 !it.terminal &&
-                    (it.stage != OccurrenceStage.COUNTDOWN ||
-                        TimerRules.remaining(
-                            it,
-                            System.currentTimeMillis(),
-                            SystemClock.elapsedRealtime(),
-                        ) == 0L)
+                    !TimerRules.canCancel(
+                        it,
+                        System.currentTimeMillis(),
+                        SystemClock.elapsedRealtime(),
+                    )
             }
         ) {
-            "Dismiss the expired timer before deleting its preset"
+            "This timer is protected or awaiting dismissal. Dismiss it before deleting its preset."
         }
         related.forEach {
             if (!it.terminal) cancelTimer(it.id)

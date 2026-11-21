@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /** Backward-compatible JSON mapping, independent of Android storage and lifecycle code. */
 object AlarmJsonCodec {
-    fun decode(jsonText: String): List<Alarm> {
+    fun decode(jsonText: String, defaultCanBeSnoozed: Boolean = true): List<Alarm> {
         val jsonArray = JSONArray(jsonText)
         val alarms = mutableListOf<Alarm>()
         for (index in 0 until jsonArray.length()) {
@@ -19,6 +19,7 @@ object AlarmJsonCodec {
                     barcodeValue = json.getString("code"),
                     barcodeFormat = json.getString("format"),
                     label = AlarmOverview.cleanLabel(json.optString("label")),
+                    canBeSnoozed = json.optBoolean("canBeSnoozed", defaultCanBeSnoozed),
                     soundUri = json.optString("sound"),
                     isEnabled = json.optBoolean("enabled"),
                     scheduledAtMillis = json.optLong("due"),
@@ -65,6 +66,7 @@ object AlarmJsonCodec {
             json.put("code", alarm.barcodeValue)
             json.put("format", alarm.barcodeFormat)
             json.put("label", AlarmOverview.cleanLabel(alarm.label))
+            json.put("canBeSnoozed", alarm.canBeSnoozed)
             json.put("sound", alarm.soundUri)
             json.put("enabled", alarm.isEnabled)
             json.put("due", alarm.scheduledAtMillis)

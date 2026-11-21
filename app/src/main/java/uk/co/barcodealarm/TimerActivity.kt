@@ -37,13 +37,23 @@ class TimerActivity : BaseActivity() {
     private var seconds = "0"
     private var reminder = "5"
     private val countdownViews = mutableMapOf<Int, TextView>()
-    private var renderedStates = emptyList<Pair<Int, OccurrenceStage>>()
+    private var renderedStates = emptyList<Triple<Int, OccurrenceStage, Boolean>>()
+
+    private fun runStates(runs: List<Occurrence>) =
+        runs.map {
+            Triple(
+                it.id,
+                it.stage,
+                TimerRules.canCancel(it, System.currentTimeMillis(), SystemClock.elapsedRealtime()),
+            )
+        }
+
     private val refresh =
         object : Runnable {
             override fun run() {
                 if (!visible || draft != null) return
                 val runs = timerOccurrences()
-                if (runs.map { it.id to it.stage } != renderedStates) {
+                if (runStates(runs) != renderedStates) {
                     showTimers()
                     return
                 }
@@ -114,7 +124,7 @@ class TimerActivity : BaseActivity() {
                 "Exact alarm access is missing. Timer delivery is blocked. Open Alarms → Settings to allow exact alarms."
             )
         }
-        renderedStates = runs.map { it.id to it.stage }
+        renderedStates = runStates(runs)
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             addCaption(
                 "Notifications are blocked. Interval chimes need notification permission; check Alarms → Settings."
@@ -163,6 +173,7 @@ class TimerActivity : BaseActivity() {
                     "Reminders · Every ${preset.reminderMinutes} minutes"
                 else "Reminders · Off"
             )
+            addCaption(if (preset.configuration.canBeSnoozed) "Snooze · On" else "Snooze · Off")
             when (run?.stage) {
                 OccurrenceStage.COUNTDOWN -> {
                     if (run.snapshot.label != TimerRules.label(preset))
@@ -172,12 +183,32 @@ class TimerActivity : BaseActivity() {
                             "${TimerRules.countdown(TimerRules.remaining(run, System.currentTimeMillis(), SystemClock.elapsedRealtime()))} remaining",
                             28f,
                         )
-                    addButton("Cancel countdown") {
-                        runUiAction {
-                            OccurrenceManager(this).cancelTimer(run.id)
-                            showTimers()
+                    if (
+                        !TimerRules.canCancel(
+                            run,
+                            System.currentTimeMillis(),
+                            SystemClock.elapsedRealtime(),
+                        )
+                    ) {
+                        addCaption(
+                            if (
+                                TimerRules.remaining(
+                                    run,
+                                    System.currentTimeMillis(),
+                                    SystemClock.elapsedRealtime(),
+                                ) == 0L
+                            )
+                                "Time is up · awaiting dismissal"
+                            else
+                                "Final ${run.timerCancellationLockMinutes} minute(s) protected · cancellation and deletion unavailable"
+                        )
+                    } else
+                        addButton("Cancel countdown") {
+                            runUiAction {
+                                OccurrenceManager(this).cancelTimer(run.id)
+                                showTimers()
+                            }
                         }
-                    }
                 }
                 null,
                 OccurrenceStage.COMPLETED,
@@ -208,13 +239,15 @@ class TimerActivity : BaseActivity() {
                             else -> "RINGING · DISMISSAL REQUIRED"
                         }
                     )
-                    if (run.stage != OccurrenceStage.SNOOZED)
-                        addButton("Open timer", primary = true) {
-                            startActivity(
-                                Intent(this, RingActivity::class.java)
-                                    .putExtra("occurrence", run.id)
-                            )
-                        }
+                    addButton(
+                        if (run.stage == OccurrenceStage.SNOOZED) "Dismiss snoozed timer"
+                        else "Open timer",
+                        primary = true,
+                    ) {
+                        startActivity(
+                            Intent(this, RingActivity::class.java).putExtra("occurrence", run.id)
+                        )
+                    }
                 }
             }
             addButtonRow {
@@ -230,7 +263,7 @@ class TimerActivity : BaseActivity() {
                     AlertDialog.Builder(this@TimerActivity)
                         .setTitle("Delete ${TimerRules.label(preset)}?")
                         .setMessage(
-                            "An active countdown will be cancelled. Expired timers must be dismissed first."
+                            "An unprotected countdown will be cancelled. Protected or expired timers must be dismissed first."
                         )
                         .setNegativeButton("Keep", null)
                         .setPositiveButton("Delete") { _, _ ->
@@ -293,6 +326,20 @@ class TimerActivity : BaseActivity() {
         hoursInput = numberInput("Hours (0–168)", hours)
         minutesInput = numberInput("Minutes (0–59)", minutes)
         secondsInput = numberInput("Seconds (0–59)", seconds)
+        val snooze =
+            CheckBox(this).apply {
+                text = "Can be snoozed"
+                setTextColor(textColor)
+                minimumHeight = toPixels(56)
+                isChecked = preset.configuration.canBeSnoozed
+                setOnCheckedChangeListener { _, checked ->
+                    draft =
+                        draft?.let {
+                            it.copy(configuration = it.configuration.copy(canBeSnoozed = checked))
+                        }
+                }
+            }
+        contentLayout.addView(snooze)
         addBarcodeSettings(preset.configuration)
         val enabled =
             CheckBox(this).apply {

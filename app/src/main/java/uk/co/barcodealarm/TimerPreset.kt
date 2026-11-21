@@ -4,7 +4,7 @@ package uk.co.barcodealarm
 data class TimerPreset(
     val id: Int,
     val durationMillis: Long,
-    val configuration: Alarm = Alarm(id, 0, 0, "", ""),
+    val configuration: Alarm = Alarm(id, 0, 0, "", "", canBeSnoozed = false),
     val reminderMinutes: Int = 0,
 )
 
@@ -84,13 +84,13 @@ object TimerRules {
             else occurrence.timerExpiresAt - now)
             .coerceAtLeast(0)
 
+    fun canCancel(occurrence: Occurrence, now: Long, elapsed: Long): Boolean =
+        occurrence.source == OccurrenceSource.TIMER &&
+            occurrence.stage == OccurrenceStage.COUNTDOWN &&
+            remaining(occurrence, now, elapsed) > occurrence.timerCancellationLockMinutes * 60_000L
+
     fun cancel(occurrence: Occurrence, now: Long, elapsed: Long): Occurrence =
-        if (
-            occurrence.source == OccurrenceSource.TIMER &&
-                occurrence.stage == OccurrenceStage.COUNTDOWN &&
-                remaining(occurrence, now, elapsed) > 0
-        )
-            occurrence.copy(stage = OccurrenceStage.CANCELLED)
+        if (canCancel(occurrence, now, elapsed)) occurrence.copy(stage = OccurrenceStage.CANCELLED)
         else occurrence
 
     fun nextReminderOffset(occurrence: Occurrence): Long? {

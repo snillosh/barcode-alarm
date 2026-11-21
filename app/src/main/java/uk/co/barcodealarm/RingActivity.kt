@@ -148,7 +148,7 @@ class RingActivity : BaseActivity() {
 
     private fun stageText(id: Int): String {
         val occurrence = OccurrenceStore(this).get(id) ?: return ""
-        if (occurrence.stage == OccurrenceStage.SECOND_RINGING)
+        if (occurrence.dismissalStage == OccurrenceStage.SECOND_RINGING)
             return "Completion window missed. Scan the second barcode to stop the alarm."
         val target =
             if (occurrence.stage == OccurrenceStage.SECOND_WAIT) occurrence.eligibleAt
@@ -167,7 +167,7 @@ class RingActivity : BaseActivity() {
     private fun addBarcodeDismissal(alarm: Alarm) {
         val occurrence = OccurrenceStore(this).get(alarm.id) ?: return
         val second =
-            occurrence.stage in
+            occurrence.dismissalStage in
                 setOf(
                     OccurrenceStage.SECOND_WAIT,
                     OccurrenceStage.SECOND_READY,
@@ -175,6 +175,10 @@ class RingActivity : BaseActivity() {
                 )
         val barcodeId = if (second) alarm.secondBarcodeId else alarm.barcodeId
         val barcode = store.getBarcodes().find { it.id == barcodeId }
+        if (occurrence.stage == OccurrenceStage.SNOOZED)
+            addCaption(
+                "Snoozed · You can dismiss this timer now without waiting or restarting its sound."
+            )
         if (second) stageCountdown = addCaption(stageText(alarm.id))
         val name = if (second) alarm.secondBarcodeName else alarm.firstBarcodeName
         if (name.isNotEmpty()) addCaption("Scan $name")
@@ -187,7 +191,7 @@ class RingActivity : BaseActivity() {
                 }
             }
         } else addButton("Scan barcode", primary = true) { runUiAction { openBarcodeScanner() } }
-        if (occurrence.audible)
+        if (occurrence.canSnooze)
             addButton("Snooze · ${AlarmRules.SNOOZE_MINUTES} minutes") {
                 runUiAction { snoozeAlarm(alarm) }
             }

@@ -43,4 +43,5 @@ data class Alarm(
     // Separate from the maths timer. Persisted so process recreation cannot restart the ramp.
     val playbackStartedAtElapsedMillis: Long = -1,
     val label: String = "",
+    val canBeSnoozed: Boolean = true,
 )

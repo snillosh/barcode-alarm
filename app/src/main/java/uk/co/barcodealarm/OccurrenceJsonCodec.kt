@@ -12,7 +12,12 @@ object OccurrenceJsonCodec {
             Occurrence(
                 id = json.getInt("id"),
                 definitionId = json.getInt("definition"),
-                snapshot = AlarmJsonCodec.decode(json.getString("snapshot")).single(),
+                snapshot =
+                    AlarmJsonCodec.decode(
+                            json.getString("snapshot"),
+                            defaultCanBeSnoozed = json.optString("source", "ALARM") != "TIMER",
+                        )
+                        .single(),
                 stage = OccurrenceStage.valueOf(json.getString("stage")),
                 eligibleAt = json.optLong("eligible"),
                 deadlineAt = json.optLong("deadline"),
@@ -31,6 +36,8 @@ object OccurrenceJsonCodec {
                 reminderMinutes = json.optInt("reminderMinutes"),
                 reminderIndex = json.optInt("reminderIndex"),
                 timerBootCount = json.optInt("timerBootCount", -1),
+                timerCancellationLockMinutes =
+                    json.optInt("timerCancellationLockMinutes", 0).coerceIn(0, 60),
             )
         }
     }
@@ -63,6 +70,7 @@ object OccurrenceJsonCodec {
                         put("reminderMinutes", occurrence.reminderMinutes)
                         put("reminderIndex", occurrence.reminderIndex)
                         put("timerBootCount", occurrence.timerBootCount)
+                        put("timerCancellationLockMinutes", occurrence.timerCancellationLockMinutes)
                     }
                 )
             }

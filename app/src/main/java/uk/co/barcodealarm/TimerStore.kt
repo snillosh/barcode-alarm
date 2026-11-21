@@ -60,7 +60,11 @@ object TimerJsonCodec {
                 TimerPreset(
                     item.getInt("id"),
                     item.getLong("duration"),
-                    AlarmJsonCodec.decode(item.getString("configuration")).single(),
+                    AlarmJsonCodec.decode(
+                            item.getString("configuration"),
+                            defaultCanBeSnoozed = false,
+                        )
+                        .single(),
                     item.optInt("reminderMinutes"),
                 )
             )

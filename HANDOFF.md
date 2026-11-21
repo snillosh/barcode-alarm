@@ -161,3 +161,33 @@ claiming this system is running the latest code.
 This handoff was checked against local source, build configuration, CI workflows,
 existing feature documents and Git refs. No application tests, live server checks
 or physical-device acceptance were performed for this documentation-only change.
+
+## Latest application update — 21 November 2026
+
+Branch `main`, application version **0.13.0** (versionCode 16), based on `a734fa7`.
+This update adds per-alarm and per-timer **Can be snoozed** controls. Legacy alarms retain
+snooze; new/legacy timer presets without an explicit choice default to off. Existing active
+snapshots keep explicit choices. Snoozed timers can open their dismissal screen immediately,
+stay silent, retain barcode-stage progress, and cancel their resume event when dismissed.
+
+Settings now includes a 0–60 minute timer cancellation protection window (default 1 minute,
+zero disables it). New runs snapshot it; legacy running occurrences default to zero. Both
+cancellation and preset deletion are rejected at/inside the window, including at expiration.
+Timer controls refresh when crossing the boundary. Alarm scheduling, completion capture,
+timer exclusion from Wellness observations, charging and server contracts are preserved.
+
+Verified locally for this update:
+
+- `testDebugUnitTest lintDebug assembleDebug assembleRelease --console=plain`: **293 tests,
+  zero failures/errors**, debug/release assembly and lint successful (warnings only).
+- `python3 scripts/check_scanner_apk.py`: passed.
+- New pure/Robolectric checks cover upgrade defaults, both editor checkboxes, alarm-editor
+  recreation, Settings persistence, protected cancellation/deletion, snapshot isolation,
+  immediate snoozed-timer dismissal, unchanged barcode/maths checks and no timer Wellness event.
+
+The local command used Android Studio's JDK 25 and `/tmp/barcode-gradle`; the generated
+Gradle daemon criteria were temporarily set aside and restored afterward to avoid the known
+local runtime-only JDK selection issue. GitHub continues to use its installed JDK 25.
+Physical phone/server acceptance was not performed. Next acceptance step: upgrade with the
+same signing key, verify a 10-minute timer protected for its last 2 minutes, then explicitly
+allow snooze and complete normal/barcode/maths dismissal before the snooze deadline.

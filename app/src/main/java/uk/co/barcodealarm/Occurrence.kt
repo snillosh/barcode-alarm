@@ -43,6 +43,7 @@ data class Occurrence(
     val reminderMinutes: Int = 0,
     val reminderIndex: Int = 0,
     val timerBootCount: Int = -1,
+    val timerCancellationLockMinutes: Int = 0,
 ) {
     fun belongsTo(source: OccurrenceSource, definitionId: Int) =
         this.source == source && this.definitionId == definitionId
@@ -59,9 +60,18 @@ data class Occurrence(
                     OccurrenceStage.VERIFY_RINGING,
                 )
 
+    val dismissalStage
+        get() = if (stage == OccurrenceStage.SNOOZED) resumeStage else stage
+
+    val canSnooze
+        get() = audible && snapshot.canBeSnoozed
+
     val active
         get() =
-            audible || stage == OccurrenceStage.SECOND_WAIT || stage == OccurrenceStage.SECOND_READY
+            audible ||
+                stage == OccurrenceStage.SECOND_WAIT ||
+                stage == OccurrenceStage.SECOND_READY ||
+                (source == OccurrenceSource.TIMER && stage == OccurrenceStage.SNOOZED)
 }
 
 /** All times are supplied by callers, making transitions deterministic in JVM tests. */
@@ -76,7 +86,7 @@ object OccurrenceRules {
         val alarm = occurrence.snapshot
         if (!occurrence.active) return occurrence
         val second =
-            occurrence.stage in
+            occurrence.dismissalStage in
                 setOf(
                     OccurrenceStage.SECOND_WAIT,
                     OccurrenceStage.SECOND_READY,
@@ -174,7 +184,7 @@ object OccurrenceRules {
                     setOf(OccurrenceStage.VERIFY_DELAY, OccurrenceStage.VERIFY_RESPONSE) &&
                 now >= occurrence.eligibleAt &&
                 now < occurrence.deadlineAt -> occurrence.copy(stage = OccurrenceStage.COMPLETED)
-            event == "snooze" && occurrence.audible ->
+            event == "snooze" && occurrence.canSnooze ->
                 occurrence.copy(
                     stage = OccurrenceStage.SNOOZED,
                     resumeStage = occurrence.stage,

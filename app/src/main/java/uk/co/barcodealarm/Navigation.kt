@@ -38,7 +38,8 @@ object Navigation {
     fun hasUnsavedChanges(draft: Alarm, savedAlarm: Alarm?): Boolean {
         val original = savedAlarm ?: Alarm(draft.id, 7, 0, "", "")
         // Execution state is not an edit. Compare only controls available in the editor.
-        return draft.label != original.label ||
+        return draft.canBeSnoozed != original.canBeSnoozed ||
+            draft.label != original.label ||
             draft.hour != original.hour ||
             draft.minute != original.minute ||
             draft.barcodeId != original.barcodeId ||

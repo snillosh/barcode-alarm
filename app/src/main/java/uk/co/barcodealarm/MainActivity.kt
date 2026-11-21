@@ -90,8 +90,12 @@ class MainActivity : BaseActivity() {
         try {
             WellnessSync.maintain(this)
         } catch (_: Exception) {}
-        try { ChargingTracking.maintain(this) } catch (_: Exception) {}
-        window.decorView.post { if (!OccurrenceStore(this).all().any { it.audible }) ChargingTracking.offerSetup(this) }
+        try {
+            ChargingTracking.maintain(this)
+        } catch (_: Exception) {}
+        window.decorView.post {
+            if (!OccurrenceStore(this).all().any { it.audible }) ChargingTracking.offerSetup(this)
+        }
         restorePageState(savedInstanceState)
         when (currentPage) {
             Page.HOME -> showHomePage()
@@ -123,6 +127,7 @@ class MainActivity : BaseActivity() {
                     secondBarcodeId = state.getInt("secondId"),
                     secondBarcodeValue = state.getString("secondValue", ""),
                     secondBarcodeFormat = state.getString("secondFormat", ""),
+                    canBeSnoozed = state.getBoolean("canBeSnoozed", savedAlarm.canBeSnoozed),
                     scanIntervalMinutes = state.getInt("scanInterval", 1),
                     verificationEnabled = state.getBoolean("verify"),
                     verificationDelayMinutes = state.getInt("verifyDelay", 5),
@@ -159,6 +164,7 @@ class MainActivity : BaseActivity() {
             outState.putInt("secondId", draft.secondBarcodeId)
             outState.putString("secondValue", draft.secondBarcodeValue)
             outState.putString("secondFormat", draft.secondBarcodeFormat)
+            outState.putBoolean("canBeSnoozed", draft.canBeSnoozed)
             outState.putInt("scanInterval", draft.scanIntervalMinutes)
             outState.putBoolean("verify", draft.verificationEnabled)
             outState.putInt("verifyDelay", draft.verificationDelayMinutes)
@@ -458,6 +464,15 @@ class MainActivity : BaseActivity() {
         addCaption("First barcode")
         addBarcodeDropdown(draft)
         addSecondStageSettings(draft)
+        val snooze = CheckBox(this)
+        snooze.text = "Can be snoozed"
+        snooze.setTextColor(textColor)
+        snooze.minimumHeight = toPixels(56)
+        snooze.isChecked = draft.canBeSnoozed
+        snooze.setOnCheckedChangeListener { _, checked ->
+            alarmDraft = alarmDraft?.copy(canBeSnoozed = checked)
+        }
+        contentLayout.addView(snooze)
         addVerificationSettings(draft)
         addButton("Manage barcodes") {
             captureEditorTime()
@@ -915,8 +930,11 @@ class MainActivity : BaseActivity() {
         setBackAction { navigateBack() }
         addAppearanceSettings()
         addPlaybackSettings()
+        addTimerSettings()
         addCaption("WELLNESS SYNC")
-        addButton("Bedtime charging · 20:00–03:00") { startActivity(Intent(this, ChargingSettingsActivity::class.java)) }
+        addButton("Bedtime charging · 20:00–03:00") {
+            startActivity(Intent(this, ChargingSettingsActivity::class.java))
+        }
         addButton("Wellness Sync") { startActivity(Intent(this, WellnessSyncActivity::class.java)) }
         addCaption("PERMISSIONS & ACCESS")
         addPermissionSettings()
@@ -930,6 +948,23 @@ class MainActivity : BaseActivity() {
         addCaption("LOCAL DIAGNOSTICS")
         addCard { addText(store.getDiagnosticLog(), 12f).typeface = Typeface.MONOSPACE }
         addButton("Back to alarms") { navigateBack() }
+    }
+
+    private fun addTimerSettings() {
+        addCaption("TIMERS")
+        addCard {
+            val settings = TimerSettings(this)
+            minuteSelector(
+                "Prevent cancellation during the final N minutes",
+                settings.cancellationLockMinutes(),
+                (0..60).toList(),
+            ) {
+                runUiAction { settings.saveCancellationLockMinutes(it) }
+            }
+            addCaption(
+                "Applies to newly started timers. 0 turns protection off. Shorter timers are protected from the start. Protected timers cannot be cancelled or deleted; dismiss them after they ring."
+            )
+        }
     }
 
     private fun addPlaybackSettings() {
@@ -975,7 +1010,9 @@ class MainActivity : BaseActivity() {
                                 settingsStore.save(updated)
                                 settings = updated
                             }
-                        dropdown.setSelection(durations.indexOf(settings.rampDurationSeconds))
+                        val savedPosition = durations.indexOf(settings.rampDurationSeconds)
+                        if (dropdown.selectedItemPosition != savedPosition)
+                            dropdown.setSelection(savedPosition)
                     }
                 }
             contentLayout.addView(dropdown)
