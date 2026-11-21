@@ -191,3 +191,9 @@ local runtime-only JDK selection issue. GitHub continues to use its installed JD
 Physical phone/server acceptance was not performed. Next acceptance step: upgrade with the
 same signing key, verify a 10-minute timer protected for its last 2 minutes, then explicitly
 allow snooze and complete normal/barcode/maths dismissal before the snooze deadline.
+
+CI follow-up for 0.13.0: implementation commit `261eb32` passed locally but its first hosted
+run could not download Robolectric Android runtimes from `repo1.maven.org` (HTTP not-found),
+affecting existing charging/history tests as well as the new tests before they executed.
+The test task now explicitly uses Maven Central's canonical `repo.maven.apache.org` endpoint;
+no test is disabled and no runtime application dependency is changed.

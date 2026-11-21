@@ -376,3 +376,7 @@ run copies it into `timerCancellationLockMinutes`; old occurrence JSON defaults 
 Both Cancel and preset deletion enforce it, and the visible timer list re-renders when that
 permission changes. Settings edits never rewrite in-progress snapshots. The added tests include
 pure boundary/migration cases and Robolectric persistence, manager and native-view checks.
+
+Robolectric resolves Android runtime artifacts independently of Gradle repositories. The
+Gradle Test task explicitly sets `robolectric.dependency.repo.url` to Maven Central's canonical
+host to avoid relying on a failing repo1 mirror on fresh GitHub runners.

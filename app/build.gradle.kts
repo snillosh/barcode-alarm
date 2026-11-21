@@ -17,6 +17,12 @@ android {
     }
 }
 
+// Robolectric resolves Android runtimes separately from Gradle's dependency repositories.
+// Use Maven Central's canonical host rather than depending on the repo1 mirror in CI.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+}
+
 dependencies {
     implementation("androidx.work:work-runtime:2.11.0")
     testImplementation("androidx.work:work-testing:2.11.0")
