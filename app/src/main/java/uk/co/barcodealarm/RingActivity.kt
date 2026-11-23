@@ -176,9 +176,7 @@ class RingActivity : BaseActivity() {
         val barcodeId = if (second) alarm.secondBarcodeId else alarm.barcodeId
         val barcode = store.getBarcodes().find { it.id == barcodeId }
         if (occurrence.stage == OccurrenceStage.SNOOZED)
-            addCaption(
-                "Snoozed · You can dismiss this timer now without waiting or restarting its sound."
-            )
+            addCaption("Snoozed · You can dismiss now without waiting or restarting the sound.")
         if (second) stageCountdown = addCaption(stageText(alarm.id))
         val name = if (second) alarm.secondBarcodeName else alarm.firstBarcodeName
         if (name.isNotEmpty()) addCaption("Scan $name")
@@ -266,7 +264,9 @@ class RingActivity : BaseActivity() {
         val candidates = store.getAlarms()
         val remaining =
             candidates.firstOrNull { OccurrenceStore(this).get(it.id)?.audible == true }
-                ?: candidates.firstOrNull()
+                ?: candidates.firstOrNull {
+                    OccurrenceStore(this).get(it.id)?.stage != OccurrenceStage.SNOOZED
+                }
         if (remaining != null) {
             intent = Intent(this, RingActivity::class.java).putExtra("occurrence", remaining.id)
             // Simultaneous occurrences each require their own authorised dismissal.

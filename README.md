@@ -479,3 +479,39 @@ snooze-button visibility and immediate silent dismissal. Device acceptance is st
 try a 10-minute timer with 2-minute protection, check Cancel/Delete before and after minute 8,
 verify timer snooze is off by default, enable snooze and dismiss before its wake-up time using
 normal/barcode/maths methods, and check alarm snooze both enabled and disabled.
+
+## Alarm protection and visible snoozes (0.14.0)
+
+Clock-time alarms cannot be deleted during their protection window, or while an occurrence
+is ringing, snoozed, waiting for a second barcode or awaiting verification. Disabling,
+editing/rescheduling and the test-alarm shortcut enforce the same rule. Duplicate remains
+available and creates an independent disabled alarm.
+
+**Settings → Alarms → Protect alarms during the final N minutes** sets a window of 1–60
+minutes, default 5. It is captured when an alarm is enabled; later Settings changes cannot
+shorten protection for a pending delivery. Existing alarms default to five minutes. A matching
+grace period after the deadline protects delayed callbacks. If a missed delivery never created
+an occurrence, its definition becomes editable after that grace period; a real unfinished
+occurrence remains protected until properly dismissed.
+
+Snoozed alarms remain visibly active, with **Snoozed until …**, an **Open snoozed alarm** button
+and their actual snooze deadline in Next alarm, ahead of a later repeat. Their switch stays on
+but read-only. A snooze awaiting a late callback still shows as active. The home screen
+refreshes while visible without scheduling or triggering alarms.
+
+Opening a snoozed alarm keeps sound paused and allows proper dismissal immediately: normal
+Dismiss for an ordinary alarm, or its existing barcode/maths requirement. Second-barcode
+progress and verification rules remain intact. Dismissal cancels the snooze callback and
+records completion when appropriate. Snooze itself returns to the list.
+
+Physical checks: keep home visible as an alarm enters its protection window and check
+Delete/Edit/disable disappear or lock. Repeat with a stale editor or Delete button. Snooze a
+one-shot alarm and verify its status, countdown, locked controls and silent dismissal screen.
+Dismiss normally and confirm it does not ring again. Check two-stage codes, maths, verification,
+concurrent timers and the next repeat. Upgrade with the same signing key; do not uninstall or
+clear data as part of testing.
+
+Validation for 0.14.0: **327 JVM/Robolectric tests**, lint, debug/release builds and the scanner
+packaging check pass. Android UI tests verify the snooze-to-home flow, active display, blocked
+mutations, silent proper dismissal and live protection-boundary refresh. Physical acceptance
+on GrapheneOS remains separate from these automated checks.

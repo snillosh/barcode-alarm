@@ -197,3 +197,32 @@ run could not download Robolectric Android runtimes from `repo1.maven.org` (HTTP
 affecting existing charging/history tests as well as the new tests before they executed.
 The test task now explicitly uses Maven Central's canonical `repo.maven.apache.org` endpoint;
 no test is disabled and no runtime application dependency is changed.
+
+## Latest application update — 23 November 2026
+
+Branch `main`, version **0.14.0** (versionCode 17), based on `839038e`. Calendar alarms now
+reject delete, disable, edit/reschedule and test-shortcut mutation in their protection window
+or while a source-matched occurrence remains unfinished, including snooze and verification.
+The 1–60 minute setting defaults to 5 and is captured per enabled delivery. A matching grace
+period protects delayed callbacks without permanently locking a missed definition which
+never produced an occurrence. Internal repeat/recovery registration remains independent.
+
+Snoozed alarms remain listed as active, with their snooze deadline in Next alarm, a read-only
+on switch and Open snoozed alarm. Proper silent normal/barcode/maths dismissal is supported
+without waiting and preserves verification and second-stage progress. Snooze returns home.
+Deletion no longer cancels active snapshots. Completion still uses the durable journal;
+timers remain excluded from Wellness observations and charging contracts are unchanged.
+
+Validation commands: `testDebugUnitTest lintDebug assembleDebug assembleRelease --console=plain`
+and `python3 scripts/check_scanner_apk.py`. New pure/Robolectric tests cover exact boundaries,
+stale mutation attempts, snoozed one-shot definitions, visible state/deadlines, independent
+timers and repeats, proper completion capture and delayed/missed deliveries. Scheduling uses
+the real clock; only presentation tests inject a clock. Physical phone/server acceptance was
+not performed. Next step: verify near-due deletion and one-shot snooze on a same-signature
+Pixel upgrade. The local build uses Android Studio JDK 25, `/tmp/barcode-gradle`, and temporarily
+sets aside/restores generated daemon criteria to avoid the known local runtime-only JDK issue.
+
+Verified outcome on 23 November: **327 tests, zero failures/errors**, successful debug and
+release assembly, lint without errors, and scanner packaging verification passed. These are
+new local results for 0.14.0; earlier test counts above are historical. Physical acceptance
+and live server checks were not performed.

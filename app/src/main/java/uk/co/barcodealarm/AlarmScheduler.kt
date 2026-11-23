@@ -61,7 +61,11 @@ class AlarmScheduler(private val context: Context) {
         check(!alarm.isRinging) { "Alarm is ringing" }
         cancel(alarm)
 
-        val enabledAlarm = AlarmRules.prepareEnabled(alarm, scheduledAtMillis)
+        val enabledAlarm =
+            AlarmRules.prepareEnabled(
+                alarm.copy(alarmProtectionMinutes = AlarmSettings(context).protectionMinutes()),
+                scheduledAtMillis,
+            )
         store.saveAlarm(enabledAlarm)
         try {
             schedule(enabledAlarm)
@@ -103,10 +107,42 @@ class AlarmScheduler(private val context: Context) {
         }
     }
 
-    fun disable(alarm: Alarm) {
-        OccurrenceManager(context).cancelDefinition(alarm.id)
-        check(!alarm.isRinging)
-        cancel(alarm)
-        store.saveAlarm(AlarmRules.markDismissed(alarm))
-    }
+    /** User entry points enforce protection; OS repeat/recovery scheduling still uses enable(). */
+    fun enableFromUser(
+        alarm: Alarm,
+        scheduledAtMillis: Long =
+            AlarmRules.calculateNextOccurrence(
+                alarm.hour,
+                alarm.minute,
+                ZonedDateTime.now(),
+                alarm.repeatDays,
+            ),
+    ): Alarm =
+        synchronized(OccurrenceStore.lock) {
+            AlarmProtection(context).requireMutable(alarm.id)
+            enable(alarm, scheduledAtMillis)
+        }
+
+    fun saveFromUser(alarm: Alarm) =
+        synchronized(OccurrenceStore.lock) {
+            AlarmProtection(context).requireMutable(alarm.id)
+            if (alarm.isEnabled) enable(alarm) else store.saveAlarm(alarm)
+        }
+
+    fun delete(id: Int) =
+        synchronized(OccurrenceStore.lock) {
+            val current = store.getAlarm(id) ?: return@synchronized
+            // Persist the guarded deletion before touching registrations. A callback after this
+            // transaction sees no definition, even if OS cancellation subsequently fails.
+            store.deleteAlarm(id)
+            cancel(current)
+        }
+
+    fun disable(alarm: Alarm) =
+        synchronized(OccurrenceStore.lock) {
+            AlarmProtection(context).requireMutable(alarm.id)
+            val current = store.getAlarm(alarm.id) ?: return@synchronized
+            cancel(current)
+            store.saveAlarm(AlarmRules.markDismissed(current))
+        }
 }

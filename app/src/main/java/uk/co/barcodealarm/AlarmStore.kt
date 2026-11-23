@@ -52,9 +52,12 @@ class AlarmStore(private val context: Context) {
         writeAlarms(alarms)
     }
 
-    fun deleteAlarm(id: Int) {
-        writeAlarms(getAlarms().filterNot { alarm -> alarm.id == id })
-    }
+    fun deleteAlarm(id: Int) =
+        synchronized(OccurrenceStore.lock) {
+            // Re-read persisted state: a stale home card must not delete a newly snoozed alarm.
+            AlarmProtection(context).requireMutable(id)
+            writeAlarms(getAlarms().filterNot { alarm -> alarm.id == id })
+        }
 
     fun getBarcodes(): List<SavedBarcode> {
         migrateBarcodeLibraryIfNeeded()

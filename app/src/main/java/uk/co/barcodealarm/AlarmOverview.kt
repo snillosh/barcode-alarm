@@ -1,6 +1,7 @@
 package uk.co.barcodealarm
 
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -20,14 +21,57 @@ object AlarmOverview {
         return AlarmRules.markDismissed(alarm).copy(id = newId, label = cleanLabel(alarm.label))
     }
 
-    fun nextScheduled(alarms: List<Alarm>, nowMillis: Long): Alarm? =
-        alarms
+    fun ongoingAlarms(occurrences: List<Occurrence>): List<Occurrence> =
+        occurrences.filter { it.source == OccurrenceSource.ALARM && !it.terminal }
+
+    fun nextScheduled(
+        alarms: List<Alarm>,
+        nowMillis: Long,
+        occurrences: List<Occurrence> = emptyList(),
+    ): Alarm? {
+        // A snooze belongs to its occurrence, not the saved repeating/one-shot definition.
+        // These temporary view records are never saved or used to schedule Android events.
+        val snoozes =
+            ongoingAlarms(occurrences)
+                .filter { it.stage == OccurrenceStage.SNOOZED }
+                .map {
+                    it.snapshot.copy(
+                        isEnabled = true,
+                        isRinging = false,
+                        isSnoozed = true,
+                        scheduledAtMillis = it.snoozeAt,
+                    )
+                }
+        return (alarms + snoozes)
             .filter { it.isEnabled && !it.isRinging && it.scheduledAtMillis > nowMillis }
             .minWithOrNull(compareBy<Alarm> { it.scheduledAtMillis }.thenBy { it.id })
+    }
 
-    fun countdown(alarms: List<Alarm>, nowMillis: Long): String {
-        val next = nextScheduled(alarms, nowMillis) ?: return "No upcoming alarms"
-        return "${formatDuration(next.scheduledAtMillis - nowMillis)} remaining"
+    fun occurrenceStatus(occurrence: Occurrence, zone: ZoneId = ZoneId.systemDefault()): String =
+        when (occurrence.stage) {
+            OccurrenceStage.SNOOZED ->
+                "Snoozed until ${Instant.ofEpochMilli(occurrence.snoozeAt).atZone(zone).format(DateTimeFormatter.ofPattern("EEE HH:mm"))}"
+            OccurrenceStage.SECOND_WAIT -> "Silenced · Waiting for second barcode"
+            OccurrenceStage.SECOND_READY -> "Second barcode ready"
+            OccurrenceStage.VERIFY_DELAY -> "Wake-up verification scheduled"
+            OccurrenceStage.VERIFY_RESPONSE -> "Are you still awake?"
+            else -> "Alarm ringing"
+        }
+
+    fun countdown(
+        alarms: List<Alarm>,
+        nowMillis: Long,
+        occurrences: List<Occurrence> = emptyList(),
+    ): String {
+        val next = nextScheduled(alarms, nowMillis, occurrences)
+        if (next != null) return "${formatDuration(next.scheduledAtMillis - nowMillis)} remaining"
+        val ongoing = ongoingAlarms(occurrences)
+        return when {
+            ongoing.any { it.audible } -> "Alarm ringing"
+            ongoing.any { it.stage == OccurrenceStage.SNOOZED } -> "Snoozed alarm due now"
+            ongoing.isNotEmpty() -> occurrenceStatus(ongoing.first())
+            else -> "No upcoming alarms"
+        }
     }
 
     fun enableConfirmation(alarm: Alarm, nowMillis: Long): String? {
@@ -69,6 +113,6 @@ object AlarmOverview {
             scheduled.format(
                 DateTimeFormatter.ofPattern(if (use24Hour) "HH:mm" else "h:mm a", locale)
             )
-        return "$day at $time · ${displayLabel(alarm)}"
+        return "${if (alarm.isSnoozed) "Snoozed · " else ""}$day at $time · ${displayLabel(alarm)}"
     }
 }

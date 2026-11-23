@@ -380,3 +380,26 @@ pure boundary/migration cases and Robolectric persistence, manager and native-vi
 Robolectric resolves Android runtime artifacts independently of Gradle repositories. The
 Gradle Test task explicitly sets `robolectric.dependency.repo.url` to Maven Central's canonical
 host to avoid relying on a failing repo1 mirror on fresh GitHub runners.
+
+## Calendar-alarm protection and snooze presentation (0.14.0)
+
+`AlarmProtectionRules` makes the mutation decision from current definitions and source-scoped
+nonterminal occurrences. `AlarmSettings` supplies a positive 1–60 minute window (default 5),
+snapshotted in `Alarm.alarmProtectionMinutes` when enabled. Old JSON defaults to 5. Pending
+deliveries are protected before the due time and for a matching delayed-delivery grace period;
+a missed definition without any occurrence is not permanently locked. Unfinished occurrences
+remain protected until proper completion.
+
+`AlarmStore.deleteAlarm` and user entry points in `AlarmScheduler` re-read persisted state under
+`OccurrenceStore.lock`. Deletion validates/persists before cancelling registrations. Blocked
+actions never cancel an event. Internal `enable()` remains available for automatic repeats and
+recovery, independently of guarded `enableFromUser()`. UI edit, enable, disable, delete and the
+test shortcut use guarded paths. Generic internal persistence and OS permission handling still
+support the existing lifecycle.
+
+`AlarmOverview` projects snoozed occurrences into temporary upcoming-alarm view records, never
+saved definitions. Timer and verification callbacks are excluded. Home derives state from
+occurrences and refreshes at protection boundaries using a controllable presentation clock.
+Snoozes are active but non-audible. Their existing `dismissalStage` preserves barcode progress
+and normal completion/verification rules. Automatic screen advancement skips snoozed records,
+so Snooze returns home while the proper dismissal screen remains available on request.

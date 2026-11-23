@@ -35,10 +35,10 @@ import android.widget.TextView
 import android.widget.TimePicker
 import androidx.core.content.ContextCompat
 import com.google.zxing.integration.android.IntentIntegrator
+import java.time.Clock
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -61,8 +61,14 @@ class MainActivity : BaseActivity() {
     private var timePicker: TimePicker? = null
     private var discardDialog: AlertDialog? = null
 
+    // A controllable presentation clock; the scheduler remains independent of this UI.
+    internal var homeClock: Clock = Clock.systemUTC()
     private val homeHandler = Handler(Looper.getMainLooper())
     private var isScreenVisible = false
+    private var nextAlarmHeading: TextView? = null
+    private var renderedAlarms = emptyList<Alarm>()
+    private var renderedOccurrences = emptyList<Occurrence>()
+    private var renderedProtectedIds = emptySet<Int>()
     private var nextAlarmDescription: TextView? = null
     private var nextAlarmCountdown: TextView? = null
     private val homeCountdownUpdate = Runnable { refreshNextAlarm() }
@@ -218,19 +224,33 @@ class MainActivity : BaseActivity() {
         timePicker = null
         addTopLevelTabs(timersSelected = false)
         addSchedulingWarnings()
+        val alarms = homeAlarms()
+        val occurrences = AlarmOverview.ongoingAlarms(OccurrenceStore(this).all())
+        renderedAlarms = alarms
+        renderedOccurrences = occurrences
+        renderedProtectedIds = protectedIds(alarms, occurrences, homeClock.millis())
         addNextAlarmCard()
-        for (occurrence in
-            OccurrenceStore(this).all().filter { it.source == OccurrenceSource.ALARM }) {
-            if (occurrence.active || occurrence.stage == OccurrenceStage.VERIFY_RESPONSE) {
-                addButton(if (occurrence.active) "Open active alarm" else "Are you still awake?") {
-                    startActivity(
-                        Intent(this, RingActivity::class.java).putExtra("occurrence", occurrence.id)
-                    )
+        for (occurrence in occurrences) {
+            addCard {
+                addText(AlarmOverview.displayLabel(occurrence.snapshot), 22f)
+                addCaption(AlarmOverview.occurrenceStatus(occurrence))
+                if (occurrence.active || occurrence.stage == OccurrenceStage.VERIFY_RESPONSE) {
+                    val action =
+                        when (occurrence.stage) {
+                            OccurrenceStage.SNOOZED -> "Open snoozed alarm"
+                            OccurrenceStage.VERIFY_RESPONSE -> "Are you still awake?"
+                            else -> "Open active alarm"
+                        }
+                    addButton(action) {
+                        startActivity(
+                            Intent(this, RingActivity::class.java)
+                                .putExtra("occurrence", occurrence.id)
+                        )
+                    }
                 }
             }
         }
 
-        val alarms = store.getAlarms().sortedBy { alarm -> alarm.hour * 60 + alarm.minute }
         if (alarms.isEmpty()) {
             addCard {
                 addText("Make mornings intentional", 22f)
@@ -238,7 +258,7 @@ class MainActivity : BaseActivity() {
             }
         }
         for (alarm in alarms) {
-            addAlarmCard(alarm)
+            addAlarmCard(alarm, occurrences)
         }
         addButton("＋  Add alarm", primary = true) { runUiAction { createAlarmDraft() } }
         addButton("Barcodes") { showBarcodeLibrary() }
@@ -246,9 +266,18 @@ class MainActivity : BaseActivity() {
         addButton("Settings & diagnostics") { showSettingsPage() }
     }
 
+    private fun homeAlarms() =
+        store.getAlarms().sortedWith(compareBy<Alarm> { it.hour * 60 + it.minute }.thenBy { it.id })
+
+    private fun protectedIds(alarms: List<Alarm>, occurrences: List<Occurrence>, now: Long) =
+        alarms
+            .filter { AlarmProtectionRules.reason(it, occurrences, it.id, now) != null }
+            .map { it.id }
+            .toSet()
+
     private fun addNextAlarmCard() {
         addCard {
-            addCaption("NEXT ALARM")
+            nextAlarmHeading = addCaption("NEXT ALARM")
             nextAlarmDescription = addCaption("")
             nextAlarmCountdown = addText("", 22f)
         }
@@ -258,10 +287,22 @@ class MainActivity : BaseActivity() {
     private fun refreshNextAlarm() {
         homeHandler.removeCallbacks(homeCountdownUpdate)
         if (currentPage != Page.HOME) return
-        val now = ZonedDateTime.now()
+        val now = Instant.now(homeClock).atZone(ZoneId.systemDefault())
         val nowMillis = now.toInstant().toEpochMilli()
-        val alarms = store.getAlarms()
-        val next = AlarmOverview.nextScheduled(alarms, nowMillis)
+        val alarms = homeAlarms()
+        val occurrences = AlarmOverview.ongoingAlarms(OccurrenceStore(this).all())
+        val protected = protectedIds(alarms, occurrences, nowMillis)
+        if (
+            alarms != renderedAlarms ||
+                occurrences != renderedOccurrences ||
+                protected != renderedProtectedIds
+        ) {
+            showHomePage()
+            return
+        }
+        val next = AlarmOverview.nextScheduled(alarms, nowMillis, occurrences)
+        nextAlarmHeading?.text =
+            if (next == null && occurrences.isNotEmpty()) "ACTIVE ALARMS" else "NEXT ALARM"
         nextAlarmDescription?.text =
             next
                 ?.let {
@@ -273,19 +314,17 @@ class MainActivity : BaseActivity() {
                 }
                 .orEmpty()
         nextAlarmDescription?.visibility = if (next == null) View.GONE else View.VISIBLE
-        nextAlarmCountdown?.text = AlarmOverview.countdown(alarms, nowMillis)
-        // UI-only refresh. Wake exactly at a displayed deadline so a fired time disappears;
-        // there is no countdown service and this callback is removed when the screen pauses.
+        nextAlarmCountdown?.text = AlarmOverview.countdown(alarms, nowMillis, occurrences)
+        // Re-read while visible so snoozes and protection boundaries cannot leave stale
+        // cards/actions on screen. This callback never schedules or fires an alarm.
         if (isScreenVisible) {
-            val delay =
-                next?.let { (it.scheduledAtMillis - nowMillis).coerceIn(1, 60_000) } ?: 60_000L
-            homeHandler.postDelayed(homeCountdownUpdate, delay)
+            homeHandler.postDelayed(homeCountdownUpdate, 1000)
         }
     }
 
     private fun enableAlarmWithConfirmation(alarm: Alarm) {
         // enable returns only after persistence and AlarmManager registration both succeeded.
-        val scheduled = AlarmScheduler(this).enable(alarm)
+        val scheduled = AlarmScheduler(this).enableFromUser(alarm)
         AlarmOverview.enableConfirmation(scheduled, System.currentTimeMillis())?.let {
             showMessage(it, short = true)
         }
@@ -309,10 +348,15 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun addAlarmCard(alarm: Alarm) {
+    private fun addAlarmCard(alarm: Alarm, occurrences: List<Occurrence>) {
+        val ongoing = occurrences.firstOrNull { it.belongsTo(OccurrenceSource.ALARM, alarm.id) }
+        val protection =
+            AlarmProtectionRules.reason(alarm, occurrences, alarm.id, homeClock.millis())
         addCard {
             val status =
                 when {
+                    ongoing != null ->
+                        AlarmOverview.occurrenceStatus(ongoing).uppercase(Locale.ROOT)
                     alarm.isSnoozed -> "SNOOZED"
                     !alarm.isEnabled -> "READY WHEN YOU ARE"
                     alarm.repeatDays.isNotEmpty() -> "REPEATING"
@@ -328,7 +372,7 @@ class MainActivity : BaseActivity() {
             clock.setTextColor(textColor)
             clock.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             timeRow.addView(clock, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            timeRow.addView(createAlarmEnabledSwitch(alarm))
+            timeRow.addView(createAlarmEnabledSwitch(alarm, ongoing != null, protection != null))
             contentLayout.addView(timeRow)
 
             val selectedBarcode =
@@ -343,18 +387,24 @@ class MainActivity : BaseActivity() {
                 addCaption(if (alarm.isSnoozed) "Snoozed until $nextTime" else "Next: $nextTime")
             }
             addCaption(
-                if (alarm.isEnabled) {
+                if (ongoing != null) "Active occurrence · use the dismissal screen"
+                else if (alarm.isEnabled) {
                     if (alarm.barcodeValue.isEmpty()) "Enabled · tap to dismiss"
                     else "Enabled · scan to dismiss"
                 } else "Disabled · enable for the next occurrence"
             )
-            addButtonRow {
-                addButton("Edit alarm") {
-                    alarmDraft = alarm
-                    showAlarmEditor()
+            if (protection != null) addCaption(protection)
+            else
+                addButtonRow {
+                    addButton("Edit alarm") {
+                        runUiAction {
+                            AlarmProtection(this).requireMutable(alarm.id)
+                            alarmDraft = store.getAlarm(alarm.id)
+                            showAlarmEditor()
+                        }
+                    }
+                    addButton("Delete", danger = true) { runUiAction { deleteAlarm(alarm) } }
                 }
-                addButton("Delete", danger = true) { runUiAction { deleteAlarm(alarm) } }
-            }
             addButton("Duplicate") {
                 runUiAction {
                     store.saveAlarm(AlarmOverview.duplicate(alarm, store.nextAlarmId()))
@@ -365,10 +415,15 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun createAlarmEnabledSwitch(alarm: Alarm): Switch {
+    private fun createAlarmEnabledSwitch(
+        alarm: Alarm,
+        hasOngoing: Boolean,
+        protected: Boolean,
+    ): Switch {
         val toggle = Switch(this)
         toggle.contentDescription = "Enable alarm at %02d:%02d".format(alarm.hour, alarm.minute)
-        toggle.isChecked = alarm.isEnabled
+        toggle.isChecked = alarm.isEnabled || hasOngoing
+        toggle.isEnabled = !protected
         toggle.minimumWidth = toPixels(64)
         toggle.minimumHeight = toPixels(56)
         toggle.thumbTintList =
@@ -389,10 +444,7 @@ class MainActivity : BaseActivity() {
     }
 
     private fun deleteAlarm(alarm: Alarm) {
-        check(!alarm.isRinging)
-        AlarmScheduler(this).cancel(alarm)
-        OccurrenceManager(this).cancelDefinition(alarm.id)
-        store.deleteAlarm(alarm.id)
+        AlarmScheduler(this).delete(alarm.id)
         showHomePage()
     }
 
@@ -731,7 +783,7 @@ class MainActivity : BaseActivity() {
         if (updatedAlarm.isEnabled) {
             enableAlarmWithConfirmation(updatedAlarm)
         } else {
-            store.saveAlarm(updatedAlarm)
+            AlarmScheduler(this).saveFromUser(updatedAlarm)
         }
         alarmDraft = null
         showHomePage()
@@ -904,9 +956,12 @@ class MainActivity : BaseActivity() {
     }
 
     private fun showTestAlarmConfirmation() {
-        val alarm = store.getAlarms().firstOrNull { savedAlarm -> !savedAlarm.isRinging }
+        val alarm =
+            store.getAlarms().firstOrNull { savedAlarm ->
+                AlarmProtection(this).reason(savedAlarm.id) == null
+            }
         if (alarm == null) {
-            showMessage("Save an alarm with a barcode first")
+            showMessage("Save an editable alarm to test. Protected alarms must be dismissed first.")
             return
         }
         val alarmTime = "${alarm.hour}:${alarm.minute.toString().padStart(2, '0')}"
@@ -916,7 +971,7 @@ class MainActivity : BaseActivity() {
             )
             .setPositiveButton("Test") { _, _ ->
                 runUiAction {
-                    AlarmScheduler(this).enable(alarm, System.currentTimeMillis() + 10_000)
+                    AlarmScheduler(this).enableFromUser(alarm, System.currentTimeMillis() + 10_000)
                     showHomePage()
                 }
             }
@@ -930,6 +985,7 @@ class MainActivity : BaseActivity() {
         setBackAction { navigateBack() }
         addAppearanceSettings()
         addPlaybackSettings()
+        addAlarmProtectionSettings()
         addTimerSettings()
         addCaption("WELLNESS SYNC")
         addButton("Bedtime charging · 20:00–03:00") {
@@ -948,6 +1004,23 @@ class MainActivity : BaseActivity() {
         addCaption("LOCAL DIAGNOSTICS")
         addCard { addText(store.getDiagnosticLog(), 12f).typeface = Typeface.MONOSPACE }
         addButton("Back to alarms") { navigateBack() }
+    }
+
+    private fun addAlarmProtectionSettings() {
+        addCaption("ALARMS")
+        addCard {
+            val settings = AlarmSettings(this)
+            minuteSelector(
+                "Protect alarms during the final N minutes",
+                settings.protectionMinutes(),
+                (1..60).toList(),
+            ) {
+                runUiAction { settings.saveProtectionMinutes(it) }
+            }
+            addCaption(
+                "Applies when an alarm is enabled. Protected, ringing and snoozed alarms cannot be deleted, disabled or edited; use their normal dismissal screen."
+            )
+        }
     }
 
     private fun addTimerSettings() {

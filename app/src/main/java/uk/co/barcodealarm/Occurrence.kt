@@ -71,7 +71,7 @@ data class Occurrence(
             audible ||
                 stage == OccurrenceStage.SECOND_WAIT ||
                 stage == OccurrenceStage.SECOND_READY ||
-                (source == OccurrenceSource.TIMER && stage == OccurrenceStage.SNOOZED)
+                stage == OccurrenceStage.SNOOZED
 }
 
 /** All times are supplied by callers, making transitions deterministic in JVM tests. */

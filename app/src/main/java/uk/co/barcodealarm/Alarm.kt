@@ -44,4 +44,5 @@ data class Alarm(
     val playbackStartedAtElapsedMillis: Long = -1,
     val label: String = "",
     val canBeSnoozed: Boolean = true,
+    val alarmProtectionMinutes: Int = 5,
 )
